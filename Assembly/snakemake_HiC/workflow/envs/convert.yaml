@@ -1,0 +1,12 @@
+name: convert-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - java-jdk = 8.0.112
+    - samtools = 1.15.1
+    - python=2.7
+
+    
+
+    

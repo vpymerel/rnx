@@ -1,0 +1,234 @@
+
+# Overall percentage masked
+
+```{bash, eval=F}
+mkdir /scratch/vmerel/tmp
+cd /scratch/vmerel/tmp
+module load gcc bedtools2
+
+#TRF
+sort -k1,1 -k4,4n /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats//TRF/Mms.gff | bedtools merge -i - >  TRF.NoOverlap.bed
+awk '{sum+=$3-$2} END {print sum}' TRF.NoOverlap.bed
+
+
+#RepeatMasker
+awk '{print $1"\t"$4-1"\t"$5}' /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.out.gff | sort -k1,1 -k2,2n | bedtools merge > RM.NoOverlap.bed
+awk '{sum+=$3-$2} END {print sum}' RM.NoOverlap.bed
+
+
+#All
+cat RM.NoOverlap.bed TRF.NoOverlap.bed | sort -k1,1 -k2,2n |  bedtools merge > All.NoOverlap.bed
+awk '{sum+=$3-$2} END {print sum}' All.NoOverlap.bed
+
+```
+
+# Per window
+
+
+```{bash, eval=F}
+mkdir -p /scratch/vmerel/MSE/Repeats/
+cd /scratch/vmerel/MSE/Repeats/
+
+# fai = genome file
+module load gcc samtools
+samtools faidx /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa
+ln -s /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.fai ./
+# RepeatModeler gff
+ln -s /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.out.gff ./
+
+#Creating a bed of windows
+module load gcc bedtools2
+bedtools makewindows -g Mms_female.fa.fai -w 1000000 | sort -k1,1 -k2,2n  > windows.bed
+
+#Merging RepeatModeler and TRF
+grep -v "##" /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.out.gff > Repeats.gff
+grep -v "##" /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats//TRF/Mms.gff | awk '{print $0" :Motif:(X)n"}'  >> Repeats.gff
+
+#One bed file per fam
+#head  /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.out.gff | awk -F '"|\t|:' '{print $1"\t"$4"\t"$5"\t"$5-$4+1"\t"$11 > $11".bed"}'
+awk -F '"|\t|:' '{print $1"\t"$4"\t"$5"\t"$5-$4+1"\t"$11 > $11".bed"}' Repeats.gff 
+
+rm x*
+#20 job seem reasonable
+split \
+--numeric-suffixes \
+--suffix-length=3 \
+-l 36 windows.bed
+
+grep '>' /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/genome-families.fa |\
+sed 's/>//g' |\
+awk -F'[/# (]' '{
+if ($2=="Unknown")
+  print $1 "\tUnknown\tUnknown";
+else if ($2=="tRNA" || $2=="Simple_repeat" || $3=="")
+        print $1 "\t" $2 "\t" $2;
+    else 
+        print $1 "\t" $2 "\t" $3;
+}' > RM.classi
+
+for chunk in x*
+do
+  echo $chunk
+
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir  /scratch/vmerel/MSE/Repeats/
+#SBATCH --job-name '"$chunk"'
+#SBATCH --output '"$chunk"'.out
+#SBATCH --error '"$chunk"'.err
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 2
+#SBATCH --mem 8G 
+#SBATCH --time 0-02:00:00 
+#SBATCH --export NONE
+
+date
+
+module load gcc bedtools2
+
+Families=`grep -v "#" Repeats.gff | cut -f 2 -d ":" | cut -f 1 -d '"'"'"'"'"' | sort -u`
+
+rm '"$chunk"'.df
+
+for Family in $Families
+do
+
+  echo $Family
+  
+  Superfamily=`awk -v Family=$Family  '"'"'{ if ($1 == Family) print $3; 
+  else if (Family ~ /)n/) print "Simple_repeat";
+  else if (Family ~ /rich/) print "Low_complexity"};'"'"' RM.classi | head -n 1`
+  Type=`awk -v Family=$Family  '"'"'{ if ($1 == Family) print $2; 
+  else if (Family ~ /)n/) print "Simple_repeat";
+  else if (Family ~ /rich/) print "Low_complexity"};'"'"' RM.classi | head -n 1`
+  
+  bedtools merge -i $Family.bed > '"$chunk"'.bed
+  #rm $Family.bed
+  
+  #To be verified if possible
+  bedtools coverage -a '"$chunk"' \
+  -b '"$chunk"'.bed \
+  -sorted \
+  -hist | awk -v Family=$Family -v Superfamily=$Superfamily -v Type=$Type \
+'"'"'{a[$1"\t"$2"\t"$3]+=($5*$4)}END{for(i in a)print i"\t"a[i]"\t"Family"\t"Superfamily"\t"Type|"sort"}'"'"'  >> '"$chunk"'.df
+done
+
+date
+'  > /scratch/vmerel/MSE/Repeats/$chunk.sh
+
+sbatch /scratch/vmerel/MSE/Repeats/$chunk.sh
+done
+
+# Concatenating
+cat x*.df > Repeats.df 
+
+scp vmerel@curnagl.dcsr.unil.ch:/scratch/vmerel/MSE/Repeats/Repeats.df ~/Desktop
+
+
+
+```
+
+# Plot
+
+
+
+```{r, eval=F}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(ggpubr)
+library(rstatix)#for multiple testing correction ?
+
+#conda activate R env
+df <- read.delim("~/Desktop/Repeats.df", header=F) 
+colnames(df) <- c("cs", "start", "end", "Nbp", "Name", "Family", "Class")
+
+#Go to per
+df <- df %>%
+  mutate(Per=Nbp/(end-start))
+
+#Select only the superchr
+ToKeep <- paste("scaffold_",1:10, sep="")
+df <- df %>%
+  filter(cs %in% ToKeep)
+
+#Group_by Type
+df <- df %>%
+  group_by(cs, start, end, Class) %>%
+  summarize(Per=sum(Per)) 
+
+#Removing non interspersed categ
+#df <- df %>%
+#  filter(Class %in% c("DNA","LINE","LTR","RC","SINE","Unknown","Simple_repeat"))
+#Let's rather classify
+df <- df %>%
+  mutate(group=ifelse(Class %in% c("DNA","LINE","LTR","RC","SINE"),"TE",
+                      ifelse(Class=="Unknown","Unknown","Others")))
+
+#Adding strata
+df <- df %>%
+  mutate(
+    categ=
+      ifelse(cs=="scaffold_1" && start < 127000000, "X0",
+             ifelse(cs=="scaffold_1" && start >= 127000000 && start < 140250000, "XYa",
+                    ifelse(cs=="scaffold_1" && start >= 140250000 && start < 157000000, "XYb",
+                    #ifelse(cs=="scaffold_1" && start >= 144000000 && start < 157000000, "XYc",
+                           ifelse(cs=="scaffold_1" && start >= 157000000 && end < 170024705, "PAR","Auto")))))
+
+
+TE_df <- df %>% filter(group=="TE") %>%
+  group_by(start, end, categ, cs) %>%
+  summarize(Per=sum(Per)) 
+
+#Removing one annoying outlier
+TE_df$Per[TE_df$Per>=0.85] <- NA
+
+TE_df$categ=factor(TE_df$categ, levels=c("X0","XYa","XYb","PAR","Auto")) #XYc
+ggplot(TE_df, aes(x=categ,
+             y=Per,
+             color=categ))+
+  geom_boxplot() +
+  scale_colour_manual(values=c("#D46A6A","#407F7F","#55AA55","black","darkgray"))+  #","#D49A6A""
+  theme_bw()+
+  theme(legend.position = "none",
+        text = element_text(size=7),
+        axis.text = element_text(size=7),
+        axis.title = element_blank())
+
+
+ggsave("/home/vmerel/mse/Manuscript/Figures/Figure_2/TEs.svg",
+       units="cm",
+       width=5,
+       height=6)
+
+median(TE_df$Per[TE_df$categ=="Auto"])
+median(TE_df$Per[TE_df$categ=="PAR"], na.rm=T)
+
+
+kruskal.test(x=TE_df$Per, g=TE_df$categ)
+median(TE_df$Per[TE_df$categ=="X0"])
+wilcox.test(TE_df$Per[TE_df$categ=="X0"], TE_df$Per[TE_df$categ=="Auto"])
+wilcox.test(TE_df$Per[TE_df$categ=="X0"], TE_df$Per[TE_df$categ=="PAR"])
+
+
+wilcox.test(TE_df$Per[TE_df$categ=="XYa"], TE_df$Per[TE_df$categ=="Auto"])
+wilcox.test(TE_df$Per[TE_df$categ=="XYa"], TE_df$Per[TE_df$categ=="PAR"])
+median(TE_df$Per[TE_df$categ=="XYa"])
+
+
+wilcox.test(TE_df$Per[TE_df$categ=="XYb"], TE_df$Per[TE_df$categ=="Auto"])
+wilcox.test(TE_df$Per[TE_df$categ=="XYc"], TE_df$Per[TE_df$categ=="Auto"])
+median(TE_df$Per[TE_df$categ=="XYc"])
+
+mean(TE_df$Per[TE_df$categ=="X0"])/mean(TE_df$Per[TE_df$categ=="Auto"])
+
+```
+
+

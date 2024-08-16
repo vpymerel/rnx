@@ -1,0 +1,269 @@
+
+# leaf to sp file
+
+## NCBI sequences
+
+```{bash, eval=F}
+grep '>' /work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny/COI_NCBI.fa | sed 's/>//g' | cut -f 1,2,3 -d ' ' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny/leaf_to_sp_NCBI.txt
+```
+
+## "Homemade" sequences
+
+```{r, eval=F}
+library("ggtree")
+library(dplyr)
+library("tibble")
+
+
+#Import tree
+tree <- read.tree("/home/vmerel/mse/Phylogeny/All.aln.contree")
+
+tree_tbl <- as_tibble(tree) %>%
+  filter(!is.na(label))
+
+library(stringr)
+Myrmecophilus_samples_simon <- read.delim("~/mse/RADseq/Myrmecophilus_samples_simon.csv")
+Myrmecophilus_samples_simon <- Myrmecophilus_samples_simon %>%
+  mutate(label=
+    ifelse(grepl("19.000",ID), str_remove(ID, "19.000"),
+           ifelse(grepl("19.00",ID),str_remove(ID, "19.00"),str_remove(ID, "19.0"))
+           )
+    )
+  
+
+tmp <- inner_join(tree_tbl, Myrmecophilus_samples_simon, by="label") 
+
+#
+tmp$sp <- as.character(tmp$species)
+tmp$sp[tmp$species=="anymphs (unidentified)"] <- "sp." 
+tmp$sp[tmp$species=="M. aequispina"] <- "aequispina" 
+tmp$sp[tmp$species=="M. myrmecophilus"] <- "myrmecophilus" 
+tmp$genus <- "myrmecophilus"
+
+tmp <- tmp %>% select(c("label","genus","sp"))
+
+write.table(tmp,
+            "/home/vmerel/mse/Phylogeny/leaf_to_sp_Simon.txt",
+            quote=F,
+            col.names=F,
+            row.names=F,
+            sep="\t")
+
+#
+```
+
+```{bash, eval=F}
+scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny/leaf_to_sp_NCBI.txt /home/vmerel/mse/Phylogeny/leaf_to_sp_NCBI.txt
+
+cat /home/vmerel/mse/Phylogeny/leaf_to_sp_NCBI.txt /home/vmerel/mse/Phylogeny/leaf_to_sp_Simon.txt  > /home/vmerel/mse/Phylogeny/leaf_to_sp.txt
+
+rm /home/vmerel/mse/Phylogeny/leaf_to_sp_NCBI.txt
+```
+
+# Plot
+
+ggplot code to label clades, color leafs, etc ...
+
+```{r, eval=F}
+library(ggtree)
+library(treeio)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+#library(ggimage)
+
+#Will be usefull
+leaf_to_sp <- read.table("/home/vmerel/mse/Phylogeny/leaf_to_sp.txt", quote="\"", comment.char="")
+colnames(leaf_to_sp) <- c("label",
+                          "genus",
+                          "sp")
+
+
+#Import tree
+tree <- read.tree("/home/vmerel/mse/Phylogeny/All.aln.contree")
+
+#Reroot tree #Ok
+tree <- ape::root(tree, 305)
+
+#remove root #Ok
+tree <- drop.tip(tree, "gryllotalpa_")
+
+#Annotation
+tree_tbl <- as_tibble(tree) %>%
+  mutate(Source=ifelse(
+    grepl("\\.",label),
+    "NCBI",
+    "This study")) %>% 
+  left_join(
+    leaf_to_sp,
+    by="label")
+
+#TO FILL SAMPLES.CSV
+tmp <- tree_tbl[grepl(c("a|b|c|d|e|f|g|h"),tree_tbl$label),]
+tmp$short_label <- str_sub(tmp$label,1,-2)
+tmp$short_label <- as.numeric(tmp$short_label)
+#
+ggtree(tree) + geom_cladelab(node=tmp$node[tmp$label=="100a"], label="mo", hjust=0.5)
+
+tree_tbl$sp <- as.character(tree_tbl$sp)
+tree_tbl$sp[tree_tbl$sp=="sp."] <- "nd"
+
+#remove 2/3 of M.myrmecophilus tip
+All_Myrmeco_Tips <- tree_tbl$label[
+  tree_tbl$node %in%
+    phytools::getDescendants(
+      tree = tree,
+      node = c(394),
+      curr=NULL) & !is.na(tree_tbl$sp)]
+ToDrop_Myrmeco_Tips <-
+  sample(
+    All_Myrmeco_Tips,
+    round(length(All_Myrmeco_Tips)*2/3))
+for (ToDrop_Myrmeco_Tip in ToDrop_Myrmeco_Tips){
+  tree <- drop.tip(tree, ToDrop_Myrmeco_Tip)
+}
+
+
+tree_tbl <- as_tibble(tree) %>%
+  mutate(Source=ifelse(
+    grepl("\\.",label),
+    "NCBI",
+    "This study")) %>%
+  left_join(leaf_to_sp,
+            by="label") 
+
+tree_tbl$sp <- as.character(tree_tbl$sp)
+tree_tbl$sp[tree_tbl$sp=="sp."] <- "nd"
+
+#A ggtree object with Annotations
+tree_gg <- ggtree(tree)  %<+% tree_tbl
+
+#Let's add the source of the sequence as shape
+p1 <- tree_gg +
+  geom_tippoint(aes(shape = Source,
+                    color = sp,
+                    size= ifelse(sp=="nd",1,1.5),
+                    x = x+0.005
+                    ))+#alpha = ifelse(sp!="nd",2,1)
+  scale_size_continuous(range=(c(1,1.5)))+
+  geom_rootedge(colour="red") + 
+  scale_shape_manual(values = c(2, 16)) +
+  scale_colour_manual(
+    values =  c("#00CD6C", #acervorum
+        "#FF7C9F", #aequispina
+        "#009ADE", #balcanicus
+        "#AF58BA", #fuscus
+        "#FFC61E", #gallicus
+        "#F28522", #manni
+        "#FA0043", #myrmecophilus #FA0043
+        "gray",
+        "#A6761D"),
+    labels=c(expression(italic("M. acervorum")),
+             expression(italic("M. aequispina")),
+             expression(italic("M. balcanicus")),
+             expression(italic("M. fuscus")),
+             expression(italic("M. gallicus")),
+             expression(italic("M. manni")),
+             expression(italic("M. myrmecophils")),
+             expression(italic("nd")),
+             "M. nonveilleri"),
+    name="Morphological ID")
+              #nonveilleri
+  #theme(legend.position="bottom")
+
+#Let's scale to big clades
+p2 <- scaleClade(p1, node=279, scale=.5) %>% #Mms
+  scaleClade(node=250, scale=.5) %>% #Mae
+  scaleClade(node=338, scale=.5) #
+##And collapse Manni #OK
+p2 <- collapse(p2, node = 195)
+
+
+
+#Let's annotate clades
+p3 <- p2 +
+  geom_cladelabel(node=279,
+                  label="italic(M.~myrmecophilus)", parse=T,
+                  color="#FF1F5B",
+                  fontsize=2.75, offset = .01)+
+  geom_cladelabel(node=277,
+                  label="italic(M.~balcanicus)", parse=T,
+                  color="#009ADE",
+                  fontsize=2.75, offset = .01) +
+  geom_cladelabel(node=335,
+                   label="italic(M.~unknown)", parse=T,
+                   color="darkgray",
+                  fontsize=2.75, offset = .01) + 
+  geom_cladelabel(node=368,
+                  label="italic(M.~nonveilleri)", parse=T,
+                  color="#A6761D",
+                  fontsize=2.75, offset = .01) +
+  geom_cladelabel(node=338,
+                  label="italic(M.~fuscus)", parse=T,
+                  color="#AF58BA",
+                  fontsize=2.75, offset = .01) +
+  geom_cladelabel(node=250,
+                  label="italic(M.~acervorum)", parse=T,
+                  color="#00CD6C",
+                  fontsize=2.75, offset = .01) +
+  geom_cladelabel(node=195,
+                  label="italic(M.~manni)", parse=T,
+                  color="black",
+                  fontsize=2.75, offset = .01) 
+
+
+
+
+#Branch support
+Selected = c(193,
+             194,
+             195,
+             196, #does nothing ?
+             249,
+             368,
+             273,
+             274,
+             275,
+             276,
+             338,
+             277,
+             279,
+             335,
+             250,
+             339,
+             340) 
+             
+             
+p4 <- p3 +
+  geom_nodelab(aes(label=ifelse(node %in% Selected,label," ")),
+               hjust=+1.4,
+               vjust=-0.3,
+               size=2.75)
+
+#adding image, do it yourself
+#p5 <- p4 + geom_image(x=0.06,
+#                      y=95,
+#                      image="/home/vincent/mse/Phylogeny/Picrure.png")
+
+
+#adjusting legend
+p5 <- p4 + theme(legend.text = element_text(size=7),
+                 legend.title = element_text(size=7))+
+  guides(alpha = "none",
+         size="none") +
+  theme(legend.position = c(0.20,0.75))
+
+#Adding the scale
+p6 <- p5 + geom_treescale(fontsize=2.75)
+
+p6
+
+ggsave(plot = p6,
+       filename = "/home/vmerel/mse/Manuscript/Figures/Figure_1/tree.svg",
+       units = "cm",
+       width = 8.25,
+       height = 20)
+
+
+
+```

@@ -1,0 +1,1630 @@
+---
+title: "20.006"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+X characterisation for M. myrmecophilus (Mms), "M. undescribed" (Mun) and M. fuscus (Mfg) using male and female WGS.
+
+# FastQC
+
+```{bash, eval=F}
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads
+
+FQs=`ls /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/*/{NovaSeq,Illumina}/*gz`
+
+for FQ in $FQs
+do
+  echo $FQ
+  sp=`echo $FQ | cut -f 10 -d '/'`
+  file=`basename $FQ | cut -f 1,2,3 -d '.'`
+  echo $sp
+  echo $file
+
+  mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Raw
+  cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Raw
+  cp $FQ ./
+  
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/'"$sp"'/Raw
+#SBATCH --job-name fastqc.'"$file"'
+#SBATCH --output fastqc.'"$file"'.out
+#SBATCH --error fastqc.'"$file"'.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 12
+#SBATCH --mem 12G 
+#SBATCH --time 01:00:00 
+#SBATCH --export NONE
+
+module load gcc/10.4.0 fastqc/0.11.9
+fastqc -t 10 '"$file"'.fastq.gz
+'> /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Raw/$file.fastqc.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Raw/$file.fastqc.sh
+
+
+done
+
+```
+
+# Reads trimming
+
+```{bash, eval=F}
+#11.06/
+#module cutadapt has been removed so
+#mamba create -p /scratch/vmerel/TrimGalore
+#mamba activate /scratch/vmerel/TrimGalore
+#mamba install bioconda::cutadapt
+#mamba install bioconda::fastqc
+#mamba deactivate
+R1s=`ls /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/*/Raw/*R1*.fastq.gz`
+
+for R1 in $R1s
+do
+  sp=`echo $R1 | cut -f 11 -d '/'`
+  file=`basename $R1 | cut -f 1,2 -d '.'`
+  R2=`echo $R1 | sed s/R1/R2/g`
+  echo $sp
+  echo $file
+  echo $R1
+  echo $R2
+
+
+  mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Trimmed
+  cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Trimmed
+  
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/'"$sp"'/Trimmed
+#SBATCH --job-name '"$file"'.Trimming
+#SBATCH --output '"$file"'.Trimming.out
+#SBATCH --error '"$file"'.Trimming.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 8
+#SBATCH --mem 12G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+#module load gcc  fastqc/0.11.9 python/3.9.13 cutadapt/2.10
+mamba activate /scratch/vmerel/TrimGalore
+
+
+~/softs/TrimGalore/trim_galore -q 20 \
+--nextera \
+--length 90 \
+--cores 8 \
+--fastqc \
+--paired '"$R1"' '"$R2"'
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Trimmed/$file.Trimming.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/$sp/Trimmed/$file.Trimming.sh
+done
+```
+
+
+# Concatenating - Renaming
+
+For Mun two sequencing runs were performed ...
+
+```{bash, eval=F}
+#There has been a slight problem all files ended up in /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Raw/Trimmed
+DIR="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Raw/Trimmed"
+ 
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mun/Trimmed
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mun/Trimmed
+ls
+cat $DIR/Mun_m.106.R1_val_1.fq.gz $DIR/Mun_m.107.R1_val_1.fq.gz > Mun_m.final_R1.fq.gz
+cat $DIR/Mun_m.106.R2_val_2.fq.gz $DIR/Mun_m.107.R2_val_2.fq.gz > Mun_m.final_R2.fq.gz
+
+cat $DIR/Mun_f.106.R1_val_1.fq.gz $DIR/Mun_f.107.R1_val_1.fq.gz > Mun_f.final_R1.fq.gz
+cat $DIR/Mun_f.106.R2_val_2.fq.gz $DIR/Mun_f.107.R2_val_2.fq.gz > Mun_f.final_R2.fq.gz
+
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mfg/Trimmed
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mfg/Trimmed
+ln -s $DIR/Mfg_f.106.R1_val_1.fq.gz Mfg_f.final_R1.fq.gz
+ln -s $DIR/Mfg_f.106.R2_val_2.fq.gz Mfg_f.final_R2.fq.gz
+
+ln -s $DIR/Mfg_m.106.R1_val_1.fq.gz Mfg_m.final_R1.fq.gz
+ln -s $DIR/Mfg_m.106.R2_val_2.fq.gz Mfg_m.final_R2.fq.gz
+
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mms/Trimmed
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mms/Trimmed
+ln -s $DIR/Mms_f.1674.R1_val_1.fq.gz Mms_f.final_R1.fq.gz
+ln -s $DIR/Mms_f.1674.R2_val_2.fq.gz Mms_f.final_R2.fq.gz
+
+ln -s $DIR/Mms_m.1674.R1_val_1.fq.gz Mms_m.final_R1.fq.gz
+ln -s $DIR/Mms_m.1674.R2_val_2.fq.gz Mms_m.final_R2.fq.gz
+
+```
+
+# Mapping
+
+Three mappers were actually tried ... although they resulted in slightly differents mean coverage, results were similar for all.
+
+```{bash, eval=F}
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/minimap2
+
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/minimap2/
+
+```
+
+## bwa
+
+```{bash, eval=F}
+Sinteractive -c 4 -m 8G -t 00:30:00
+module load gcc/10.4.0 bwa/0.7.17
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa
+bwa index Mms_female.fa
+```
+
+```{bash, eval=F}
+R1s=`ls /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/*/Trimmed/*final_R1*.fq.gz`
+
+for R1 in $R1s
+do
+
+  File=`echo $R1 | cut -f 12 -d '/'`
+  Sp=${File::3}
+  Sample=${File::5}
+  R2=`echo $R1 | sed 's/R1/R2/g' | sed 's/val_1/val_2/g'`
+  echo $Sp
+  echo $Sample
+  echo $R1
+  echo $R2
+
+  rm -r /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa/$Sp
+
+  mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa/$Sp
+
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa/'"$Sp"'
+#SBATCH --job-name '"$Sample"'_mapping
+#SBATCH --output '"$Sample"'_mapping.out
+#SBATCH --error '"$Sample"'_mapping.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 30
+#SBATCH --mem 60G 
+#SBATCH --time 24:00:00 
+#SBATCH --export NONE
+
+module load gcc/10.4.0 bwa/0.7.17 samtools/1.15.1
+
+bwa mem -t 30 \
+../Mms_female.fa \
+'"$R1"' \
+'"$R2"' |\
+~/softs/samblaster/samblaster -r -d '"$Sample"'.disc.sam -s '"$Sample"'.split.sam -o '"$Sample"'.sam
+
+samtools view -Sb '"$Sample"'.disc.sam | samtools sort -@30 -o ./'"$Sample"'.disc.bam
+samtools view -Sb '"$Sample"'.split.sam | samtools sort -@30 -o ./'"$Sample"'.split.bam
+samtools view -Sb '"$Sample"'.sam | samtools sort -@30 -o ./'"$Sample"'.bam
+
+rm ./'"$Sample"'.disc.sam
+rm ./'"$Sample"'.split.sam
+rm ./'"$Sample"'.sam
+
+samtools index -@ 30 '"$Sample"'.disc.bam
+samtools index -@ 30 '"$Sample"'.bam
+samtools index -@ 30 '"$Sample"'.split.bam
+
+#disc
+samtools view -bh \
+-@ 30 \
+'"$Sample"'.disc.bam scaffold_1 > '"$Sample"'.disc.scaffold_1.bam
+
+#all ? look like so
+samtools view -bh \
+-@ 30 \
+'"$Sample"'.bam scaffold_1 > '"$Sample"'.scaffold_1.bam
+
+#split
+samtools view -bh \
+-@ 30 \
+'"$Sample"'.split.bam scaffold_1 > '"$Sample"'.scaffold_1.split.bam
+
+
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa//$Sp/${Sample}_mapping.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa//$Sp/${Sample}_mapping.sh
+
+done
+
+```
+
+## Stampy
+
+```{bash, eval=F}
+#Build a genome (.stidx) file:
+Sinteractive -c 2 -m 4G -t 01:00:00
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy
+mamba activate /scratch/vmerel/stampy/env
+/scratch/vmerel/stampy/env/bin/python2.7 /scratch/vmerel/stampy/env/stampy-1.0.32/stampy.py \
+-G Mms_f Mms_female.fa
+
+#Build a hash (.sthash) file:
+/scratch/vmerel/stampy/env/bin/python2.7 /scratch/vmerel/stampy/env/stampy-1.0.32/stampy.py \
+-g Mms_f -H Mms_f
+
+Sinteractive -c 4 -m 8G -t 00:30:00
+module load gcc/10.4.0 bwa/0.7.17
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy
+bwa index Mms_female.fa
+```
+
+```{bash, eval=F}
+
+R1s=`ls /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/*/Trimmed/*final_R1*.fq.gz`
+
+#Gga_F and Mms_m failed due to timing
+
+for R1 in $R1s
+do
+
+  File=`echo $R1 | cut -f 12 -d '/'`
+  Sp=${File::3}
+  Sample=${File::5}
+  R2=`echo $R1 | sed 's/R1/R2/g' | sed 's/val_1/val_2/g'`
+  echo $Sp
+  echo $Sample
+  echo $R1
+  echo $R2
+
+  rm -r /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/$Sp
+
+  mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/$Sp
+
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/'"$Sp"'
+#SBATCH --job-name '"$Sample"'_mapping
+#SBATCH --output '"$Sample"'_mapping.out
+#SBATCH --error '"$Sample"'_mapping.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 30
+#SBATCH --mem 60G 
+#SBATCH --time 48:00:00 
+#SBATCH --export NONE
+
+module load gcc bwa samtools
+
+bwa aln -q10 -t30 ../Mms_female.fa '"$R1"' > '"$Sample"'.1.sai
+bwa aln -q10 -t30 ../Mms_female.fa '"$R2"' > '"$Sample"'.2.sai
+bwa sampe ../Mms_female.fa '"$Sample"'.1.sai '"$Sample"'.2.sai '"$R1"' '"$R2"' | \
+samtools view -Sb - > '"$Sample"'.bwa.bam
+
+mamba activate /scratch/vmerel/stampy/env
+
+/scratch/vmerel/stampy/env/bin/python2.7 /scratch/vmerel/stampy/env/stampy-1.0.32/stampy.py \
+-g ../Mms_f -h ../Mms_f -t30 --bamkeepgoodreads -M '"$Sample"'.bwa.bam > '"$Sample"'.sam
+
+samtools sort '"$Sample"'.sam -o '"$Sample"'.bam
+
+mamba deactivate
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/$Sp/${Sample}_mapping.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/$Sp/${Sample}_mapping.sh
+
+done
+
+rm /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/*/*.sai
+rm /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/*/*.sam
+rm /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/stampy/*/*.bwa.bam
+```
+
+
+## minimap2
+
+```{bash, eval=F}
+
+#R1s=`ls /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/*/Trimmed/M*final_R1*.fq.gz`
+
+R1s="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mfg/Trimmed/Mfg_f.final_R1.fq.gz /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mfg/Trimmed/Mfg_m.final_R1.fq.gz /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mms/Trimmed/Mms_f.final_R1.fq.gz /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mms/Trimmed/Mms_m.final_R1.fq.gz"
+
+for R1 in $R1s
+do
+
+  File=`echo $R1 | cut -f 12 -d '/'`
+  Sp=${File::3}
+  Sample=${File::5}
+  R2=`echo $R1 | sed 's/R1/R2/g' | sed 's/val_1/val_2/g'`
+  echo $Sp
+  echo $Sample
+  echo $R1
+  echo $R2
+
+  rm -r /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/minimap2/$Sp
+
+  mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/minimap2/$Sp
+
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/minimap2/'"$Sp"'
+#SBATCH --job-name '"$Sample"'_mapping
+#SBATCH --output '"$Sample"'_mapping.out
+#SBATCH --error '"$Sample"'_mapping.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 30
+#SBATCH --mem 60G 
+#SBATCH --time 48:00:00 
+#SBATCH --export NONE
+
+module load gcc samtools 
+
+/users/vmerel/softs/minimap2/minimap2 -t 30 -ax sr ../Mms_female.fa '"$R1"' '"$R2"'  | samtools sort -@ 30 - -o '"$Sample"'.bam
+
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/minimap2/$Sp/${Sample}_mapping.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/minimap2/$Sp/${Sample}_mapping.sh
+
+done
+
+
+```
+
+# Get unique regions
+
+Only unique regions will be considered for coverage and X-Y divergence analysis. Unique regions are regions that are not annotated by TRF or RepeatMasker
+
+```{bash, eval=F}
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/
+module load gcc bedtools2
+
+#TRF
+sort -k1,1 -k4,4n /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats//TRF/Mms.gff | bedtools merge -i - >  TRF.NoOverlap.bed
+
+#RM
+awk '{print $1"\t"$4-1"\t"$5}' /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.out.gff | sort -k1,1 -k2,2n | bedtools merge > RM.NoOverlap.bed
+
+#All
+cat RM.NoOverlap.bed TRF.NoOverlap.bed | sort -k1,1 -k2,2n |  bedtools merge > All.NoOverlap.bed
+
+#Unique
+# https://bedtools.readthedocs.io/en/latest/content/tools/complement.html?highlight=complement
+sort -k1,1 /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/bwa/Mms_female.fa.fai > index.sorted
+/users/vmerel/softs/bedtools complement \
+-i All.NoOverlap.bed \
+-g index.sorted > Unique.bed
+```
+
+# Coverage
+
+## At the bp level
+
+```{bash, eval=F}
+
+for Mapping in "minimap2" "bwa" "stampy" 
+do
+  
+  for Sample in "Mfg" "Mms" "Mun"
+  do
+     echo $Sample" "$Mapping
+     for Sex in "m" "f"
+     do
+     
+       BAM="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/$Mapping/$Sample/${Sample}_${Sex}.bam"
+       OUTPUT="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.bp_cov"
+
+       echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/
+#SBATCH --job-name '"$Sample"'_'"$Sex"'_'"$Mapping"'.bp_cov
+#SBATCH --output '"$Sample"'_'"$Sex"'_'"$Mapping"'.bp_cov.out
+#SBATCH --error '"$Sample"'_'"$Sex"'_'"$Mapping"'.bp_cov.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 16
+#SBATCH --mem 32G 
+#SBATCH --time 01:00:00 
+#SBATCH --export NONE
+
+module load gcc samtools bedtools2
+
+samtools index -@ 16 '"$BAM"'
+#samtools depth -Q 1 -a -r scaffold_1 -@16 '"$BAM"' | awk '"'"'{print $1"\t"$2-1"\t"$2"\t"$3}'"'"' | bedtools #subtract -a - -b All.NoOverlap.bed > '"$OUTPUT"'
+#samtools depth -Q 1 -a -r scaffold_2 -@16 '"$BAM"' | awk '"'"'{print $1"\t"$2-1"\t"$2"\t"$3}'"'"' | bedtools #subtract -a - -b All.NoOverlap.bed >> '"$OUTPUT"'
+
+
+samtools depth -Q 1 -a -@16 '"$BAM"' | awk '"'"'{print $1"\t"$2-1"\t"$2"\t"$3}'"'"' | bedtools subtract -a - -b All.NoOverlap.bed >> '"$OUTPUT"'
+'  > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.bp_cov.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.bp_cov.sh
+
+    done
+  done
+done
+
+```
+
+Let's get an histogram to inspect the distribution and find haploid-diploid ranges. It will be used to filter non diploid positions in X-Y divergence analysis.
+
+```{bash, eval=F}
+
+#On part sur de l'histogramme ... 
+#Ce sera plus simple, let's also go only for male, will be quicker
+for Mapping in "bwa" "stampy" "minimap2" "minimap2_easy" "minimap2_easyInsert"
+do
+  
+  for Sample in "Mfg" "Mms" "Mun"
+  do
+     echo $Sample" "$Mapping
+     for Sex in "m" "f"
+     do
+     
+       INPUT="${Sample}_${Sex}_${Mapping}.bp_cov"
+       OUTPUT="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.bp_cov.hist"
+       
+       echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/
+#SBATCH --job-name '"$Sample"'_'"$Sex"'_'"$Mapping"'.bp_cov_hist
+#SBATCH --output '"$Sample"'_'"$Sex"'_'"$Mapping"'.bp_cov_hist.out
+#SBATCH --error '"$Sample"'_'"$Sex"'_'"$Mapping"'.bp_cov_hist.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 2
+#SBATCH --mem 4G 
+#SBATCH --time 01:00:00 
+#SBATCH --export NONE
+
+file='"$INPUT"'
+
+Sp=`echo $file | cut -f 1 -d "_"`
+Sex=`echo $file | cut -f 2 -d "_"`
+Mapping=`echo $file | cut -f 3,4 -d "_" | cut -f 1 -d "."`
+
+#X0
+awk '"'"'{ if ($1=="scaffold_1" && $2<127000000) print $0}'"'"' $file |\
+awk -v Sp=$Sp -v Sex=$Sex -v Mapping=$Mapping '"'"'{count[$4]++} END {for (word in count) print Sp"\t"Sex"\t"Mapping"\tX0\t"word"\t"count[word]}'"'"' |\
+sort -k 5,5n > '"$OUTPUT"'
+  
+#XY
+awk '"'"'{ if ($1=="scaffold_1" && $2>127000000) print $0}'"'"' $file |\
+awk -v Sp=$Sp -v Sex=$Sex -v Mapping=$Mapping '"'"'{count[$4]++} END {for (word in count) print Sp"\t"Sex"\t"Mapping"\tXY\t"word"\t"count[word]}'"'"' | sort -k 5,5n >> '"$OUTPUT"'
+  
+#Auto
+awk '"'"'{ if ($1=="scaffold_2") print $0}'"'"' $file |\
+awk -v Sp=$Sp -v Sex=$Sex -v Mapping=$Mapping '"'"'{count[$4]++} END {for (word in count) print Sp"\t"Sex"\t"Mapping"\tAuto\t"word"\t"count[word]}'"'"' | sort -k 5,5n >> '"$OUTPUT"'
+  
+  
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/$Sample.$Sex.$Mapping.bp_cov_hist.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/$Sample.$Sex.$Mapping.bp_cov_hist.sh
+
+    done
+  done
+done
+
+
+
+
+
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/
+rm /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/All.cov
+for file in *bp_cov.hist
+do
+  cat $file >> /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/All.cov
+done
+
+sshpass -p "*************" \
+scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/All.cov ~/Desktop
+```
+
+Plot histograms
+
+```{r, eval=F}
+Cov <- read.delim("~/Desktop/All.cov", header=FALSE)
+colnames(Cov) <- c("sp","sex","Mapping","status","coverage","N")
+
+summary(is.na(Cov))
+
+#Total
+Cov %>% group_by(sp, sex, Mapping, status) %>%
+  summarize(Plop=sum(N)) %>% filter(Mapping=="bwa" & sp=="Mfg" & sex=="m")
+
+#
+summary(is.na(Cov))
+
+Cov$prop[Cov$status=="Auto"] <- Cov$N[Cov$status=="Auto"]/53628069
+Cov$prop[Cov$status=="X0"] <- Cov$N[Cov$status=="X0"]/54682543
+Cov$prop[Cov$status=="XY"] <- Cov$N[Cov$status=="XY"]/27884115
+
+#Should be one
+Cov %>% group_by(sp, sex, Mapping, status) %>%
+  summarize(Plop=sum(prop))
+
+summary(is.na(Cov))
+
+#Are we sure ?
+nearest <- function(coverage, cumprop, threshold) {
+  #d <- d[d != ref]
+  coverage[which.min(abs(cumprop - threshold))]
+}
+
+Cov <- Cov %>% group_by(sp, sex, Mapping, status) %>% 
+  mutate(cumprop = cumsum(prop)) %>%
+  tidyr::pivot_wider(names_from="status", values_from = c("cumprop","N", "prop")) %>%
+  mutate(Candidate = 
+           ifelse(cumprop_X0>0.95 &
+                    #cumprop_Auto>0.05 &
+                    cumprop_Auto<0.975,
+                  "yes",
+                  "no"),
+         min_All = nearest(coverage, cumprop_X0, 0.05),
+         max_All = nearest(coverage, cumprop_Auto, 0.975),
+         min_Candidate =  nearest(coverage, cumprop_X0, 0.95),
+         max_Candidate =  nearest(coverage, cumprop_Auto, 0.975)) %>%
+  tidyr::pivot_longer(cols = 5:12,
+                      names_to = c("Plop","status"),
+                      names_sep="_") %>%
+  tidyr::pivot_wider(names_from="Plop", values_from = "value")
+
+sum(Cov$N[Cov$sp=="Mun" & Cov$Mapping=="bwa" & Cov$sex=="m" & Cov$status=="haploid"])
+
+Cov$coverage[Cov$sp=="Mfg" & (Cov$coverage>80 | Cov$coverage<1)] <- NA
+Cov$coverage[Cov$sp=="Mms" & (Cov$coverage>200 | Cov$coverage<25)] <- NA
+Cov$coverage[Cov$sp=="Mun" & (Cov$coverage>90 | Cov$coverage<1)] <- NA
+  
+Male_plot <- Cov %>%
+  filter(sex=="m") %>%
+  ggplot(aes(x=coverage,
+           y=prop, 
+           color=status,
+           size=Candidate))+
+  geom_point() +
+  facet_grid(Mapping~sp, scales="free_x") +
+  coord_cartesian(ylim = c(0,0.075)) +
+  geom_vline(data=Cov[Cov$sex=="m",], aes(xintercept = min_All, slope = 0))+
+  geom_vline(data=Cov[Cov$sex=="m",], aes(xintercept = max_All, slope = 0))+
+  geom_vline(data=Cov[Cov$sex=="m",], aes(xintercept = min_Candidate, slope = 0))+
+  geom_vline(data=Cov[Cov$sex=="m",], aes(xintercept = max_Candidate, slope = 0))+
+  theme_bw()
+
+#For female it is easier
+Female_plot <- Cov %>%
+  filter(sex=="f") %>%
+  ggplot(aes(x=coverage,
+           y=prop, 
+           color=status))+ #
+  geom_point() +
+  facet_grid(Mapping~sp, scales="free_x") +
+  coord_cartesian(ylim = c(0,0.075))+
+  geom_vline(data=Cov[Cov$sex=="f",], aes(xintercept = min_All, slope = 0))+
+  geom_vline(data=Cov[Cov$sex=="f",], aes(xintercept = max_All, slope = 0))
+
+```
+
+A filtering table manually created from histogram visual inspections. Columns are: species sex mapping_method ignored min_cov max_cov min_diploid max_diploid.
+
+```{bash, eval=F}
+##Male
+echo "Mfg m bwa Auto 0 42 24 42
+Mfg m minimap2 Auto 0 51 28 51
+Mfg m stampy Auto 0 54 32 54
+Mms m bwa Auto 44 161 83 161
+Mms m minimap2 Auto 48 185 94 185
+Mms m stampy Auto 49 186 95 186
+Mun m bwa Auto 4 49 26 49
+Mun m minimap2 Auto 5 64 34 64
+Mun m stampy Auto 6 65 35 65"  > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/Thresholds_bp.csv
+
+##Female
+echo "Mfg f bwa Auto 0 41 0 41
+Mfg f minimap2 Auto 0 48 0 48
+Mfg f stampy Auto 0 52 0 52
+Mms f bwa Auto 87 155 87 155
+Mms f minimap2 Auto 97 178 97 178
+Mms f stampy Auto 99 179 99 179
+Mun f bwa Auto 11 41 11 41
+Mun f minimap2 Auto 14 55 14 55
+Mun f stampy Auto 15 56 15 56" >> /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/Thresholds_bp.csv
+
+```
+
+## Windows level
+
+Now we can compute coverage per windows
+
+```{bash, eval=F}
+#Let's create windows
+/users/vmerel/softs/bedtools makewindows \
+-g index.sorted \
+-w 250000 > Windows.bed
+/users/vmerel/softs/bedtools sort \
+-i Windows.bed >\
+WindowsSorted.bed
+
+     
+
+
+for Mapping in  "bwa" #"minimap2_easyInsert" "stampy"  "minimap2_easy" "minimap2" 
+do
+  echo $Mapping
+
+  for Sample in "Mfg" "Mms" "Mun"
+  do
+    echo $Sample
+
+    for Sex in "m" "f" 
+    do 
+      echo $Sex
+
+    INPUT_1="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.bp_cov"
+    OUTPUT_1="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.bp_cov_filtered"
+    OUTPUT_2="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.window_cov"
+
+
+    min_cov=`awk -v Mapping=$Mapping \
+    -v Sample=$Sample \
+    -v Sex=$Sex \
+'{if ($1==Sample && $2==Sex && $3==Mapping) print $5}' /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/Thresholds_bp.csv`
+
+
+
+    max_cov=`awk -v Mapping=$Mapping \
+    -v Sample=$Sample \
+    -v Sex=$Sex \
+    '{if ($1==Sample && $2==Sex && $3==Mapping) print $6}' /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/Thresholds_bp.csv`
+
+
+
+
+      echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/
+#SBATCH --job-name '"$Sample"'_'"$Sex"'_'"$Mapping"'.window_cov
+#SBATCH --output '"$Sample"'_'"$Sex"'_'"$Mapping"'.window_cov.out
+#SBATCH --error '"$Sample"'_'"$Sex"'_'"$Mapping"'.window_cov.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 4
+#SBATCH --mem 8G 
+#SBATCH --time 00:20:00 
+#SBATCH --export NONE
+
+module load gcc samtools
+
+awk -v min_cov='"$min_cov"' \
+-v max_cov='"$max_cov"' \
+'"'"'{ if ($4>min_cov && $4<max_cov) print $0}'"'"' '"$INPUT_1"' | sort -k1,1 -k2,2n > '"$OUTPUT_1"'
+
+/users/vmerel/softs/bedtools map \
+-a WindowsSorted.bed \
+-b '"$OUTPUT_1"' \
+-c 4 -o median > '"$OUTPUT_2"'
+
+
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.sh
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_${Sex}_${Mapping}.sh
+
+    done
+  done
+done
+   
+rm /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/All.window_cov
+for file in *.window_cov
+do
+  Sp=`echo $file | cut -f 1 -d '_'`
+  Sex=`echo $file | cut -f 2 -d '_'`
+  Mapping=`echo $file | cut -f 3,4 -d '_' | cut -f 1 -d '.'`
+  
+  awk -v Sp=$Sp -v Sex=$Sex -v Mapping=$Mapping '{print Sp"\t"Sex"\t"Mapping"\t"$0}' $file >> /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/All.window_cov
+done
+
+sshpass -p "*************" \
+scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/All.window_cov ~/Desktop
+```
+
+
+
+# Calling - XY divergence
+
+## bcftools
+
+```{bash, eval=F}
+
+rm -r /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling
+
+
+echo 'scaffold_1 1 128000000 M 1
+* * * M 2
+* * * F 2' > Ploidy.csv
+
+module load gcc samtools 
+
+for Mapping in "minimap2" "minimap2_easy" #"bwa" "stampy"
+do
+  
+  for Sample in "Mfg" "Mms" "Mun"
+  do
+  
+    Assembly="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/$Mapping/Mms_female.fa"
+    Male="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/$Mapping/$Sample/${Sample}_m.bam"
+    Female="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/$Mapping/$Sample/${Sample}_f.bam"
+
+    samtools view $Male | head -n 2
+    samtools view $Female | head -n 2
+    
+    echo "${Female} F" > $Sample.$Mapping.csv
+    echo "${Male} M" >> $Sample.$Mapping.csv
+
+    echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling
+#SBATCH --job-name '"$Sample"'.'"$Mapping"'_Calling
+#SBATCH --output '"$Sample"'.'"$Mapping"'_Calling.out
+#SBATCH --error '"$Sample"'.'"$Mapping"'_Calling.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 24
+#SBATCH --mem 48G 
+#SBATCH --time 48:00:00 
+#SBATCH --export NONE
+
+module load gcc/10.4.0 samtools/1.15.1 bcftools/1.15.1
+
+bcftools mpileup --threads 24 -Ou \
+-f '"$Assembly"' \
+'"$Male"' \
+'"$Female"' |\
+bcftools call --ploidy-file Ploidy.csv --samples-file '"$Sample"'.'"$Mapping"'.csv --threads 24 -m -Ob -o '"$Sample"'.'"$Mapping"'.bcf
+
+#-Ou Do not waste computer’s time by making mpileup convert from the internal binary representation (BCF) to text (VCF), only to be immediately converted back to binary representation by call. Instead, use -Ou to work with uncompressed BCF output
+
+'> /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/$Sample.${Mapping}_Calling.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/$Sample.${Mapping}_Calling.sh
+
+  
+  done
+done
+
+```
+
+## Filtering
+
+
+
+```{bash, eval=F}
+
+
+for Mapping in "bwa" "stampy" "minimap2" "minimap2_easy"
+do
+  
+  for Sample in "Mfg" "Mms" "Mun"
+  do
+     echo $Sample" "$Mapping
+     bcf="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/${Sample}.$Mapping.bcf"
+     #Filtering by bed
+    min_cov=`awk -v Mapping=$Mapping \
+    -v Sample=$Sample \
+'{if ($1==Sample && $2==Mapping) print $6}' /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/Thresholds_bp.csv`
+    max_cov=`awk -v Mapping=$Mapping \
+    -v Sample=$Sample \
+    '{if ($1==Sample && $2==Mapping) print $7}' /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/Thresholds_bp.csv`
+    
+     bed="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/${Sample}_m_${Mapping}.bp_cov"
+     #
+     
+     ind="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/'"$Mapping"'/'"$Sample"'/'"$Sample"'_m.bam"
+
+     echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling
+#SBATCH --job-name '"$Sample"'.'"$Mapping"'_Filtering
+#SBATCH --output '"$Sample"'.'"$Mapping"'_Filtering.out
+#SBATCH --error '"$Sample"'.'"$Mapping"'_Filtering.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 16
+#SBATCH --mem 16G 
+#SBATCH --time 24:00:00 
+#SBATCH --export NONE
+
+awk -v min_cov='"$min_cov"' \
+-v max_cov='"$max_cov"' \
+'"'"'{ if ($4>min_cov && $4<max_cov) print $0}'"'"' '"$bed"' > '"$bed"'.tmp
+
+#vcftools is super long, see git
+
+module load gcc bcftools
+
+bcftools index -f '"$bcf"' 
+bcftools convert --threads 16 \
+--regions-file '"$bed"'.tmp \
+--output-type v \
+--output '"$Sample"'.'"$Mapping"'.filtered.vcf '"$bcf"' 
+
+rm '"$bed"'.tmp
+
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/${Sample}.${Mapping}_Filtering.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/${Sample}.${Mapping}_Filtering.sh
+
+  done
+done
+```
+
+## Counting prep.
+
+Else file will be regenerated for each counting
+
+```{bash, eval=F}
+
+
+for Mapping in "bwa" "stampy" "minimap2" "minimap2_easy"
+do
+  
+  for Sample in "Mfg" "Mms" "Mun"
+  do
+     echo $Sample" "$Mapping
+     vcf="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/'"$Sample"'.'"$Mapping"'.filtered.vcf"
+
+     ind="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/'"$Mapping"'/'"$Sample"'/'"$Sample"'_m.bam"
+      
+     echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling
+#SBATCH --job-name '"$Sample"'.'"$Mapping"'_Prep
+#SBATCH --output '"$Sample"'.'"$Mapping"'_Prep.out
+#SBATCH --error '"$Sample"'.'"$Mapping"'_Prep.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 8
+#SBATCH --mem 16G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+module load gcc vcftools
+
+module load gcc plink-ng/2.00a3.6
+plink2 --vcf '"$vcf"' \
+--out '"$Sample"'.'"$Mapping"' \
+--allow-extra-chr \
+--threads 8 \
+--make-pgen
+
+
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/${Sample}.${Mapping}_Prep.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/${Sample}.${Mapping}_Prep.sh
+
+  done
+done
+
+
+```
+
+## Counting
+
+```{bash, eval=F}
+
+
+awk '{if ($1=="scaffold_1") print $0}' /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/WindowsSorted.bed  > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/WindowsSorted.scaffold_1.bed
+for Mapping in "bwa" "stampy" "minimap2" "minimap2_easy"
+do
+  
+  for Sample in "Mfg" "Mms" "Mun"
+  do
+     echo $Sample" "$Mapping
+
+
+     echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling
+#SBATCH --job-name '"$Sample"'.'"$Mapping"'_Counting
+#SBATCH --output '"$Sample"'.'"$Mapping"'_Counting.out
+#SBATCH --error '"$Sample"'.'"$Mapping"'_Counting.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 8
+#SBATCH --mem 16G 
+#SBATCH --time 48:00:00 
+#SBATCH --export NONE
+
+module load gcc plink-ng/2.00a3.6
+
+input="/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Coverage/WindowsSorted.bed     
+#Both are needed
+rm '"$Sample"'.'"$Mapping"'.counts
+rm '"$Sample"'.'"$Mapping"'.scount
+
+while IFS= read -r line
+do
+  cs=`echo "$line" | cut -f 1`
+  start=`echo "$line" | cut -f 2`
+  end=`echo "$line" | cut -f 3`
+  echo -e $cs"\t"$start"\t"$end
+  plink2 --pfile '"$Sample"'.'"$Mapping"' \
+--out '"$Sample"'.'"$Mapping"' \
+--allow-extra-chr \
+--threads 8 \
+--chr $cs \
+--from-bp $start \
+--to-bp $end \
+--sample-counts cols=hom,het
+
+  File="'"$Sample"'.'"$Mapping"'.scount"
+  if [ -f "$File" ]; then
+  
+    grep "_m" $File | awk -v Sample='"$Sample"' \
+-v Mapping='"$Mapping"' '"'"'{print Sample"\t"Mapping"\tm\t"$2"\t"$3}'"'"' > '"$Sample"'.'"$Mapping"'.tmp.csv
+    grep "_f" $File | awk -v Sample='"$Sample"' \
+-v Mapping='"$Mapping"' '"'"'{print Sample"\t"Mapping"\tf\t"$2"\t"$3}'"'"' >> '"$Sample"'.'"$Mapping"'.tmp.csv
+  
+  else 
+    echo -e "'"$Sample"'\t'"$Mapping"'\tm\tNA\tNA" > '"$Sample"'.'"$Mapping"'.tmp.csv
+    echo -e "'"$Sample"'\t'"$Mapping"'\tf\tNA\tNA" >> '"$Sample"'.'"$Mapping"'.tmp.csv
+
+  fi
+
+  
+  awk -v cs=$cs -v start=$start -v end=$end '"'"'{print $0"\t"cs"\t"start"\t"end}'"'"' '"$Sample"'.'"$Mapping"'.tmp.csv >> '"$Sample"'.'"$Mapping"'.counts
+  
+  rm '"$Sample"'.'"$Mapping"'.scount
+done < "$input"
+
+
+
+
+
+
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/$Sample.${Mapping}_Counting.sh
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/$Sample.${Mapping}_Counting.sh
+
+  done
+done
+
+rm All.counts
+cat *counts > All.counts
+
+sshpass -p "*************" \
+scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/SR2Female/Calling/All.counts ~/Desktop
+```
+
+# Plots Fig 1A & 3A
+
+```{r}
+#Import
+##Cov
+Cov <- read.delim("~/Desktop/All.window_cov", header=FALSE)
+colnames(Cov) <- c("sp","sex","Mapping","cs","start","end","cov")
+Cov$cov <- as.numeric(Cov$cov)
+
+##Htz
+Htz <- read.delim("~/Desktop/All.counts", header=FALSE)
+colnames(Htz) <- c("sp","Mapping","sex","hom","het","cs","start","end")
+Htz <- Htz %>%
+  mutate(htz=
+           ifelse(
+             start<127e6, 0, ifelse(
+             (hom+het)>12500, het/(hom+het), NA)))
+
+#Bind
+All <- full_join(Cov, Htz, by=c("sp","sex","Mapping","cs","start","end"))
+
+#Format
+All <- All %>%
+  tidyr::pivot_longer(7:10, values_to = "Value", names_to = "Variable") %>%
+  filter(Variable %in% c("cov","htz")) %>%
+  mutate(filtered_out=ifelse(is.na(Value) & (Variable=="htz"), TRUE, FALSE)) 
+
+
+#To Mb
+All$start <- All$start/1e6
+All$end <- All$end/1e6
+
+#Subset
+All <- All %>%
+  filter(sex=="m") %>%
+  filter(cs=="scaffold_1") %>%
+  filter(Mapping=="minimap2") 
+
+
+
+#Coloring a bit
+All <- All %>% mutate(Strata=ifelse(start<127,"X0",
+                                    ifelse(start>=127 & start<144, "XYa",
+                                           #ifelse(start>=140.25 & start<144, "XYb",
+                                                  ifelse(start>=144 & start<157,"XYb","PAR"))))
+#A bit nicer
+All$Variable <- factor(All$Variable,
+                       levels = c("cov","htz"),
+                       labels = c("M. read depth", "M. htz"))
+#Plot
+library(cowplot)
+
+All %>% filter(sp=="Mms") %>%
+  ggplot(aes(x=start+(end-start)/2,
+           y=Value,
+           color=Strata)) +
+  geom_point(size=0.5)+
+  #geom_rect(aes(xmin = ifelse(filtered_out,start,NA),
+  #              xmax = ifelse(filtered_out,end,NA),
+  #              ymin = -Inf,
+  #              ymax = +Inf),
+  #              color="gray",
+  #              fill="gray")+
+  facet_grid(Variable~., scales="free")+
+  theme_cowplot() + 
+  theme(legend.position = "none",
+        text = element_text(size=7),
+        axis.text = element_text(size=7),
+        axis.title = element_blank())+
+    scale_x_continuous(breaks=c(0,50,100,150),
+                       labels=c("0Mb",
+                                "50Mb",
+                                "100Mb",
+                                "150Mb"))+
+    expand_limits(y = 0.04)+#for Htz (mfs)
+  scale_colour_manual(values=c("black","#D46A6A","#407F7F","#55AA55"))
+
+Mun <- All %>% filter(sp=="Mun") %>%
+  ggplot(aes(x=start+(end-start)/2,
+           y=Value,
+           color=Strata)) +
+  geom_point(size=0.5)+
+  #geom_rect(aes(xmin = ifelse(filtered_out,start,NA),
+  #              xmax = ifelse(filtered_out,end,NA),
+  #              ymin = -Inf,
+  #              ymax = +Inf),
+  #              color="gray",
+  #              fill="gray")+
+  facet_grid(Variable~., scales="free")+
+  theme_cowplot() + 
+  theme(legend.position = "none",
+        text = element_text(size=7),
+        axis.text = element_text(size=7),
+        axis.title = element_blank())+
+    scale_x_continuous(breaks=c(0,50,100,150),
+                       labels=c("0Mb",
+                                "50Mb",
+                                "100Mb",
+                                "150Mb"))+
+    expand_limits(y = 0.04)+#for Htz (mfs)
+  scale_colour_manual(values=c("black","#D46A6A","#407F7F","#55AA55"))
+  
+Mfg <- All %>% filter(sp=="Mfg") %>%
+  ggplot(aes(x=start+(end-start)/2,
+           y=Value,
+           color=Strata)) +
+  geom_point(size=0.5)+
+  #geom_rect(aes(xmin = ifelse(filtered_out,start,NA),
+  #              xmax = ifelse(filtered_out,end,NA),
+  #              ymin = -Inf,
+  #              ymax = +Inf),
+  #              color="gray",
+  #              fill="gray")+
+  facet_grid(Variable~., scales="free")+
+  theme_cowplot() + 
+  theme(legend.position = "none",
+        text = element_text(size=7),
+        axis.text = element_text(size=7),
+        axis.title = element_blank())+
+    scale_x_continuous(breaks=c(0,50,100,150),
+                       labels=c("0Mb",
+                                "50Mb",
+                                "100Mb",
+                                "150Mb"))+
+    expand_limits(y = 0.04)+#for Htz (mfs)
+  scale_colour_manual(values=c("black","#D46A6A","black","black"))
+
+xoff <- .15 # relative x position of label, within one plot
+yoff <- .98 # relative y position of label, within one plot
+A<-plot_grid(Mun,
+          Mfg,
+          Mfg, #FOR PROPORTIONS
+          #myplots[[3]],
+          #labels = c("M. myrmecophilus", does not align correctly that way
+          #           "M. unknown",
+          #           "M. fuscus"),
+          #label_size=12,
+          #label_fontface="italic",
+          #align = "hv",
+          ncol=1) +
+  draw_plot_label(
+    label = c(#"M. myrmecophilus", 
+            "M. unknown",
+            "M. fuscus",
+            "M. fuscus"),
+    x = rep(xoff, 3),
+    y = 1-(1-yoff+rep(0:2, each=1))/3,
+    hjust = .5,
+    vjust = .5,
+    fontface = "italic",
+    size = 9)
+
+ggsave("~/mse/WGS/Figure_3_R.svg",
+       units = "cm",
+       width = 11,
+       height = 20.8)
+```
+
+# Plots sup. fig.
+
+## Sup. fig. S2
+
+```{r}
+#Import
+Cov <- read.delim("~/Desktop/All.window_cov", header=FALSE)
+colnames(Cov) <- c("sp","sex","Mapping","cs","start","end","cov")
+Cov$cov <- as.numeric(Cov$cov)
+
+#To Mb
+Cov$start <- Cov$start/1e6
+Cov$end <- Cov$end/1e6
+
+#Subset
+ToKeep=paste("scaffold_",1:10,sep="")
+
+Cov <- Cov %>%
+  filter(cs %in% ToKeep) %>%
+  filter(Mapping=="minimap2") 
+
+Cov$cs <- factor(Cov$cs, levels=paste("scaffold_",1:10,sep=""))
+Cov$sex <- factor(Cov$sex, levels=c("f","m"), labels = c("Female", "Male"))
+
+#Adding expectation - Dirty last minute
+median(Cov$cov[Cov$cs %in% paste("scaffold_",2:10,sep="") & Cov$sp=="Mms" & Cov$sex=="Male" & Cov$Mapping=="bwa"], na.rm=T)
+Cov$Diploid[Cov$sex=="Male"]=128
+Cov$Haploid[Cov$sex=="Male"]=128/2
+
+median(Cov$cov[Cov$cs %in% paste("scaffold_",2:10,sep="") & Cov$sp=="Mms" & Cov$sex=="Female" & Cov$Mapping=="bwa"], na.rm=T)
+Cov$Diploid[Cov$sex=="Female"]=123
+Cov$Haploid[Cov$sex=="Female"]=123/2
+
+
+
+#Cumsum of middle (to get all scf on the same plot)
+#Cov <- Cov %>%
+#  group_by(sp, sex, Mapping) %>%
+#  mutate(csum = cumsum(start+(end-start)/2))
+#You can't do that, let's gor fot something dirty but efficient
+Cov$pos = Cov$start+(Cov$end-Cov$start)/2
+
+for (ToAdd in 1:9){
+  ToAddScf=paste("scaffold_",ToAdd, sep="")
+  print(ToAddScf)
+  ToModifyScfs=paste("scaffold_",(ToAdd+1):10,sep="")
+  Cov$pos[Cov$cs %in% ToModifyScfs] <- Cov$pos[Cov$cs %in% ToModifyScfs]+max(Cov$end[Cov$cs==ToAddScf])
+}
+
+
+
+
+#Color - pair impair contig
+Cov$color <- ifelse(Cov$cs %in% c("scaffold_1", 
+                                  "scaffold_3",
+                                  "scaffold_5", 
+                                  "scaffold_7",
+                                  "scaffold_9"),"black", "gray")
+
+#Plot
+library(cowplot)
+
+  
+Male <- Cov %>% filter(sp=="Mms") %>% filter(sex=="Male")  %>%
+  ggplot(aes(x=pos,
+           y=cov,
+           color=color)) +
+  geom_point(size=0.5)+
+  theme_cowplot() + 
+  theme(legend.position = "none",
+        text = element_text(size=7),
+        axis.text = element_text(size=7))+
+  xlab("Assembly position")+
+  ylab("Read-depth")+
+  scale_colour_manual(values=c("black","gray"))+
+    geom_hline(yintercept = Cov$Diploid[Cov$sex=="Male"])+
+    geom_hline(yintercept = Cov$Haploid[Cov$sex=="Male"], linetype="dashed")
+
+Female <- Cov %>% filter(sp=="Mms") %>% filter(sex=="Female")  %>%
+  ggplot(aes(x=pos,
+           y=cov,
+           color=color)) +
+  geom_point(size=0.5)+
+  theme_cowplot() + 
+  theme(legend.position = "none",
+        text = element_text(size=7),
+        axis.text = element_text(size=7))+
+  xlab("Assembly position")+
+  ylab("Read-depth")+
+  scale_colour_manual(values=c("black","gray"))+
+    geom_hline(yintercept = Cov$Diploid[Cov$sex=="Female"])+
+    geom_hline(yintercept = Cov$Haploid[Cov$sex=="Female"], linetype="dashed")
+
+
+A<- plot_grid(Male,
+          Female,
+          #labels = c("M. myrmecophilus", does not align correctly that way
+          #           "M. unknown",
+          #           "M. fuscus"),
+          #label_size=12,
+          #label_fontface="italic",
+          #align = "hv",
+          ncol=1)
+
+ggsave("~/mse/Supplementary/Figures/All_cov_Mms_compact.svg",
+       units = "cm",
+       width = 18,
+       height = 20.8)
+```
+
+## X-Y divergence: Sup. fig. S4 et Sup. fig. S6
+
+
+```{r, eval=F}
+
+##Htz
+Htz <- read.delim("~/Desktop/All.counts", header=FALSE)
+colnames(Htz) <- c("sp","Mapping","sex","hom","het","cs","start","end")
+summary(as.factor(Htz$cs))
+Htz <- Htz %>%
+  mutate(htz=het/(hom+het))#htz=
+        #   ifelse(
+        #     start<127e6, 0, ifelse(
+        #     (hom+het)>12500, het/(hom+het), NA)))
+
+#Removing one annoying outlier
+Htz$htz[Htz$htz>=0.05] <- NA
+
+#Select only the superchr
+ToKeep <- paste("scaffold_",1:2, sep="")
+df <- Htz %>%
+  filter(cs %in% ToKeep)
+
+#Adding strata
+df <- df %>%
+  mutate(
+    categ=
+      ifelse(cs=="scaffold_1" & start < 127000000, "X0",
+             ifelse(cs=="scaffold_1" & start >= 127000000 & start < 140250000, "Xa",
+                    ifelse(cs=="scaffold_1" & start >= 140250000 & start < 144000000, "Xa",
+                    ifelse(cs=="scaffold_1" & start >= 144000000 & start < 157000000, "Xb",
+                           ifelse(cs=="scaffold_1" & start >= 157000000 & end < 170024705, "PAR","Auto"))))))
+
+
+df$categ=factor(df$categ, levels=c("X0","Xa","Xb","PAR","Auto")) #,"XYc"
+df$sp=factor(df$sp, levels=c("Mms","Mun","Mfg"))
+
+
+df %>%
+  filter(categ!="X0"& sex=="m" & sp=="Mms") %>%
+  ggplot(aes(x=categ,
+             y=htz,
+             color=categ))+
+  geom_boxplot() +
+  scale_colour_manual(values=c("#407F7F","#55AA55","black","darkgray"))+#"#D49A6A","#D46A6A",
+  theme_bw()+
+  theme(legend.position = "none",
+        text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.title = element_blank())
+
+ggsave("/home/vmerel/mse/Supplementary/Figures/Htz_Mms.svg",
+       units="cm",
+       width=10,
+       height=12)
+
+
+Mun <- df %>%
+  filter(categ!="X0"& sex=="m" & sp=="Mun" & Mapping=="minimap2") %>%
+  ggplot(aes(x=categ,
+             y=htz,
+             color=categ))+
+  geom_boxplot() +
+  scale_colour_manual(values=c("#407F7F","#55AA55","black","darkgray"))+#"#D49A6A","#D46A6A",
+  theme_bw()+
+  theme(legend.position = "none",
+        text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.title = element_blank())
+
+ggsave("/home/vmerel/mse/Supplementary/Figures/Htz_Mun.svg",
+       units="cm",
+       width=10,
+       height=12)
+
+Mfg <- df %>%
+  filter(categ!="X0"& sex=="m" & sp=="Mfg"  & Mapping=="minimap2") %>%
+  ggplot(aes(x=categ,
+             y=htz,
+             color=categ))+
+  geom_boxplot() +
+  scale_colour_manual(values=c("#407F7F","#55AA55","black","darkgray"))+#"#D49A6A","#D46A6A",
+  theme_bw()+
+  theme(legend.position = "none",
+        text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.title = element_blank())
+
+ggsave("/home/vmerel/mse/Supplementary/Figures/Htz_Mfg.svg",
+       units="cm",
+       width=10,
+       height=12)
+
+library(cowplot)
+plot_grid(Mun,
+          Mfg,
+          labels = c("M. unknown", "M. fuscus"),
+          label_size=12,
+          label_fontface="italic",
+          align = "hv",
+          ncol=2) 
+
+ggsave("~/mse/Supplementary/Figures/Mun_Mfg_htz.svg",
+       units = "cm",
+       width = 18,
+       height = 20.8)
+
+#Mms stats
+median(df$htz[df$categ=="Auto" & df$sp=="Mms" & df$sex=="m"])
+kruskal.test(x=df$htz[df$sp=="Mms" & df$sex=="m" & df$categ!="X0" & df$Mapping=="minimap2"]], g=df$categ[df$sp=="Mms" & df$sex=="m" & df$categ!="X0" & df$Mapping=="minimap2"]])
+wilcox.test(df$htz[df$categ=="Xa" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xb" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xc" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"])
+
+#Mun
+median(df$htz[df$categ=="Auto" & df$sp=="Mun" & df$sex=="m"])
+kruskal.test(x=df$htz[df$sp=="Mun" & df$sex=="m" & df$categ!="X0" & df$Mapping=="minimap2"]], g=df$categ[df$sp=="Mun" & df$sex=="m" & df$categ!="X0" & df$Mapping=="minimap2"]])
+wilcox.test(df$htz[df$categ=="Xa" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xb" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xc" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"])
+
+#Mfg
+median(df$htz[df$categ=="Auto" & df$sp=="Mfg" & df$sex=="m"])
+kruskal.test(x=df$htz[df$sp=="Mfg" & df$sex=="m" & df$categ!="X0" & df$Mapping=="minimap2"]], g=df$categ[df$sp=="Mfg" & df$sex=="m" & df$categ!="X0" & df$Mapping=="minimap2"]])
+wilcox.test(df$htz[df$categ=="Xa" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xb" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xc" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"])
+
+#Mun vs Mms
+wilcox.test(df$htz[df$categ=="Xa" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Xa" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xb" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Xb" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="PAR" & df$sp=="Mun" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="PAR" & df$sp=="Mms" & df$sex=="m" & df$Mapping=="minimap2"])
+
+#Mfg vs Mms
+wilcox.test(df$htz[df$categ=="Xa" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="Xb" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"])
+wilcox.test(df$htz[df$categ=="PAR" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"], df$htz[df$categ=="Auto" & df$sp=="Mfg" & df$sex=="m" & df$Mapping=="minimap2"])
+
+
+```
+
+## Coverage: Sup. fig. S3 & S5
+
+```{r}
+#Import
+##Cov
+Cov <- read.delim("~/Desktop/All.window_cov", header=FALSE)
+colnames(Cov) <- c("sp","sex","Mapping","cs","start","end","cov")
+Cov$cov <- as.numeric(Cov$cov)
+
+
+#Subset
+ToKeep=paste("scaffold_",1:10,sep="")
+
+Cov <- Cov %>%
+  #filter(sex=="m") %>%
+  filter(cs %in% ToKeep) #%>%
+  #filter(Mapping=="minimap2_easy") 
+
+#Adding strata
+Cov <- Cov %>%
+  mutate(
+    categ=
+      ifelse(cs=="scaffold_1" & start < 127000000, "0-127Mb (X0)",
+             ifelse(cs=="scaffold_1" & start >= 127000000 & start < 140250000, "127-144Mb (Xa)",
+                    ifelse(cs=="scaffold_1" & start >= 140250000 & start < 144000000, "127-144Mb (Xa)",
+                    ifelse(cs=="scaffold_1" & start >= 144000000 & start < 157000000, "144-157Mb (Xb)",
+                           ifelse(cs=="scaffold_1" & start >= 157000000 & end < 170024705, "157-170Mb (PAR)","Auto."))))))
+
+Cov$categ=factor(Cov$categ, levels=c("0-127Mb (X0)","127-144Mb (Xa)","144-157Mb (Xb)","157-170Mb (PAR)","Auto."))
+
+
+Cov %>% filter(Mapping=="minimap2") %>%
+  filter(sp=="Mms") %>%
+  ggplot(aes(x=categ,
+           y=cov,
+           color=categ))+
+  geom_boxplot()+
+  scale_colour_manual(values=c("#D46A6A","#407F7F","#55AA55","black","darkgray"))+#,"#D49A6A"
+  theme_bw()+
+  theme(legend.position = "none",
+        text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title = element_blank())+
+  geom_hline(yintercept = 145)+
+  geom_hline(yintercept = 145/2, linetype="dashed")
+
+ggsave("~/mse/Supplementary/Figures/Mms_cov.svg",
+       units = "cm",
+       width = 18,
+       height = 20.8)
+
+
+
+mean(Cov$cov[Cov$categ=="Auto" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+sd(Cov$cov[Cov$categ=="X0" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+
+mean(Cov$cov[Cov$categ=="XYa" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+sd(Cov$cov[Cov$categ=="XYa" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+median(Cov$cov[Cov$categ=="XYa" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+
+mean(Cov$cov[Cov$categ=="XYb" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+sd(Cov$cov[Cov$categ=="XYb" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+median(Cov$cov[Cov$categ=="XYb" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+
+mean(Cov$cov[Cov$categ=="PAR" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+sd(Cov$cov[Cov$categ=="PAR" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+median(Cov$cov[Cov$categ=="PAR" & Cov$sp=="Mms" & Cov$sex=="m" & Cov$Mapping=="minimap2"])
+
+
+# Mun and Mfs
+Mun <- Cov %>% filter(Mapping=="minimap2") %>%
+  filter(sp=="Mun") %>%
+  ggplot(aes(x=categ,
+           y=cov,
+           color=categ))+
+  geom_boxplot()+
+  scale_colour_manual(values=c("#D46A6A","#407F7F","#55AA55","black","darkgray"))+#,"#D49A6A"
+  theme_bw()+
+  theme(legend.position = "none",
+        text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title = element_blank())+
+  geom_hline(yintercept = 35)+
+  geom_hline(yintercept = 35/2, linetype="dashed")#+
+  
+
+ggsave("~/mse/Supplementary/Figures/Mun_cov.svg",
+       units = "cm",
+       width = 18,
+       height = 20.8)
+
+median(Cov$cov[Cov$categ=="Auto." & Cov$sp=="Mfg" & Cov$sex=="m" & Cov$Mapping=="minimap2"], na.rm=T)
+
+Mfg <- Cov %>% filter(Mapping=="minimap2") %>%
+  filter(sp=="Mfg") %>%
+  ggplot(aes(x=categ,
+           y=cov,
+           color=categ))+
+  geom_boxplot()+
+  scale_colour_manual(values=c("#D46A6A","#407F7F","#55AA55","black","darkgray"))+#,"#D49A6A"
+  theme_bw()+
+  theme(legend.position = "none",
+        text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title = element_blank())+
+  geom_hline(yintercept = 26)+
+  geom_hline(yintercept = 26/2, linetype="dashed")#+
+  
+
+ggsave("~/mse/Supplementary/Figures/Mfg_cov.svg",
+       units = "cm",
+       width = 18,
+       height = 20.8)
+
+library(cowplot)
+plot_grid(Mun,
+          Mfg,
+          labels = c("M. unknown", "M. fuscus"),
+          label_size=12,
+          label_fontface="italic",
+          align = "hv",
+          ncol=2) 
+
+ggsave("~/mse/Supplementary/Figures/Mun_Mfg_cov.svg",
+       units = "cm",
+       width = 18,
+       height = 20.8)
+
+
+
+
+```

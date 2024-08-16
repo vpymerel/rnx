@@ -1,0 +1,8 @@
+name: salsa2_prep-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - samtools = 1.15.1
+    - bedtools = 2.30.0
+

@@ -1,0 +1,588 @@
+---
+title: "Myrmecophilus"
+subtitle: Genome assembly (HiFi)
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Data
+
+Let's just put the reads in a work folder.
+
+```{bash, eval=FALSE}
+mkdir -p /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus
+
+cp /nas/FAC/FBM/DEE/tschwand/bacillus/LTS/myrmecophilus_tmp/S7HBipjr_M21-04F_Circular_Consensus_Sequencing_Reads.tar.gz ./
+tar -zxvf S7HBipjr_M21-04F_Circular_Consensus_Sequencing_Reads.tar.gz
+rm S7HBipjr_M21-04F_Circular_Consensus_Sequencing_Reads.tar.gz
+
+#For "historical" reasons, reads are going to be name alex.fastq.gz
+mv M21-04F_Circular_Consensus_Sequencing_Reads/fastx_files/demultiplex.bc1017_BAK8B_OA--bc1017_BAK8B_OA.hifi_reads.fastq.gz alex.fastq.gz
+```
+
+# kmer analysis
+
+A kmer distribution analyses to get an idea about genome size, heterozygosity, etc?
+
+```{bash, eval=FALSE}
+mkdir -p /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/kmer/tmp
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/kmer
+
+Filenames=`ls /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/*.fastq.gz | xargs -n 1 basename`
+
+for Filename in $Filenames
+do
+
+  Sample=`echo $Filename | cut -f 1 -d '.'`
+  
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type ALL 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /scratch/vmerel/
+#SBATCH --job-name '"$Sample"'_kmer
+#SBATCH --output /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/kmer/'"$Sample"'_kmer.out
+#SBATCH --error /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/kmer/'"$Sample"'_kmer.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 16
+#SBATCH --mem 100G 
+#SBATCH --time 00:30:00 
+#SBATCH --export NONE
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/kmer
+rm -r tmp_'"$Sample"'
+mkdir tmp_'"$Sample"'
+
+# kmer 21, 15 threads, 100G of memory, counting kmer coverages between 1 and 10000x
+/users/vmerel/softs/kmc/bin/kmc -k21 \
+-t16 \
+-m100 \
+-ci1 \
+-cs10000 \
+../'"$Filename"' \
+'"$Sample"'.kmcdb tmp_'"$Sample"'
+
+/users/vmerel/softs/kmc/bin/kmc_tools \
+transform '"$Sample"'.kmcdb \
+histogram \
+'"$Sample"'.kmcdb_k21.hist \
+-cx10000' > ${Sample}_kmer.sh
+
+sbatch ${Sample}_kmer.sh
+
+done
+
+
+mkdir /home/vincent/TGAs/myrmecophilus/kmer
+cd /home/vincent/TGAs/myrmecophilus/kmer
+
+scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/kmer/*_k21* ./
+
+~/soft/genomescope2.0/genomescope.R -i alex.kmcdb_k21.hist \
+-o alex -k 21  
+~/soft/genomescope2.0/genomescope.R -i default.kmcdb_k21.hist \
+-o default -k 21  
+```
+
+# Assembly
+
+HiFi reads assembly using ipa.
+
+```{bash, eval=F}
+#A conda env
+module load gcc/9.3.0 python/3.8.8 miniconda3
+conda create -p /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/ipa
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/ipa
+conda install pbipa 
+conda install samtools=1.10
+
+ipa validate
+
+conda deactivate
+
+#
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type ALL 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /scratch/vmerel/
+#SBATCH --job-name Myrmeco_ipa
+#SBATCH --output /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/ipa/Myrmeco_ipa.out
+#SBATCH --error /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/ipa/Myrmeco_ipa.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 20
+#SBATCH --mem 40G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/ipa/
+
+module load gcc/9.3.0 python/3.8.8 miniconda3
+
+eval "$(conda shell.bash hook)"
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/ipa
+
+ipa validate
+
+mkdir temp
+ipa local --nthreads 20 --njobs 1 --tmp-dir temp -i ../alex.fastq.gz
+
+conda deactivate' > /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/ipa/Myrmeco_ipa.sh
+sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/ipa/Myrmeco_ipa.sh
+
+
+module load gcc/9.3.0 bbmap/38.63
+stats.sh assembly.fasta > bbmap.stats
+```
+
+
+# purge_haplotigs
+
+A round of haplotigs purging was envisioned, but the read-depth distribution suggested that it was useless ...
+
+```{bash, eval=F}
+#A conda env
+module load gcc/9.3.0 python/3.8.8 miniconda3
+conda create -p /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/purge_haplotigs -c conda-forge -c bioconda purge_haplotigs
+conda activate /users/vmerel/work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/purge_haplotigs
+purge_haplotigs test
+
+
+mkdir -p /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/ipa
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/ipa
+cp ../../ipa/RUN/19-final/final.p_ctg.fasta ipa.asm.fasta
+
+Asms=`ls /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/*/*asm.fasta | xargs -n 1 basename`
+
+for Asm in $Asms
+do
+  echo $Asm
+  Met=`echo $Asm | cut -f 1 -d '.'`
+  echo $Met
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /scratch/vmerel/
+#SBATCH --job-name Myrmeco_purge_haplotigs_'"$Met"'_Prep_Step1
+#SBATCH --output /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/'"$Met"'/Myrmeco_purge_haplotigs_'"$Met"'_Prep_Step1.out
+#SBATCH --error /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/'"$Met"'/Myrmeco_purge_haplotigs_'"$Met"'_Prep_Step1.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 12
+#SBATCH --mem 48G 
+#SBATCH --time 01:00:00 
+#SBATCH --export NONE
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/'"$Met"'
+
+module load gcc/9.3.0 python/3.8.8 miniconda3
+
+eval "$(conda shell.bash hook)"
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/purge_haplotigs
+
+#PREPARATION
+
+#Map your PacBio subreads, or some decent long reads (or even short reads) to your haploid or diploid genome assembly. Youll want to map a library that produces an even coverage and use a "randombest" alignment for multimappers. Sort and index the bam with samtools index. Index your genome.fasta file with samtools faidx. 
+
+samtools faidx '"$Asm"'
+
+minimap2 -t 12 \
+-ax map-hifi \
+'"$Asm"' \
+../../alex.fastq.gz \
+--secondary=no \
+    | samtools sort -m 24G -o '"$Met"'.aligned.bam -T '"$Met"'.tmp.ali
+ 
+#--secondary=yes|no - Whether to output secondary alignments [yes]
+
+#STEP 1
+
+#Generate a coverage histogram by running the first script. This script will produce a histogram png image file for you to look at and a BEDTools "genomecov"-like file that youll need for STEP 2.
+
+purge_haplotigs hist  \
+-b '"$Met"'.aligned.bam  \
+-g '"$Asm"'  \
+-t 12
+
+#REQUIRED:
+#-b / -bam       BAM file of aligned and sorted reads/subreads to the reference
+#-g / -genome    Reference FASTA for the BAM file.
+
+#OPTIONAL:
+#-t / -threads   Number of worker threads to use, DEFAULT = 4, MINIMUM = 2' >  /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/$Met/Myrmeco_purge_haplotigs_${Met}_Prep_Step1.sh
+
+#sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/purge_haplotigs/$Met/Myrmeco_purge_haplotigs_${Met}_Prep_Step1.sh
+done
+
+```
+
+# blobtools
+
+Lets decontaminate using blobtools
+
+```{bash, eval=F}
+mkdir /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools
+
+wget https://github.com/AsexGenomeEvol/HD_Oppiella/blob/master/assembly/contamination_filtration.py
+
+mkdir /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/ipa
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/ipa
+cp ../../ipa/RUN/19-final/final.p_ctg.fasta ipa.asm.fasta
+```
+
+## Blast contigs for taxonomy hits
+
+You first need to download ncbi nt db
+
+```{bash, eval=F}
+mkdir /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db
+rm -r /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt
+mkdir /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /scratch/vmerel/
+#SBATCH --job-name nt
+#SBATCH --output /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt/net.out
+#SBATCH --error /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt/net.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 2
+#SBATCH --mem 24G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt
+
+module load  gcc/9.3.0 perl/5.32.1
+/software/Blast/ncbi-blast/2.10.1+/bin/update_blastdb.pl --passive --decompress nt' > /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt/net.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt/net.sh
+
+cd  /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt
+wget ftp://ftp.ncbi.nlm.nih.gov/blast/db/taxdb.tar.gz
+tar xzvf taxdb.tar.gz
+
+```
+
+Then you can blast ...
+
+```{bash, eval=F}
+Asms=`ls /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/*/*asm.fasta | xargs -n 1 basename`
+
+for Asm in $Asms
+do
+  echo $Asm
+  Met=`echo $Asm | cut -f 1 -d '.'`
+  echo $Met
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /scratch/vmerel/
+#SBATCH --job-name Myrmeco_blobtools_Step1_'"$Met"'
+#SBATCH --output /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'/Myrmeco_blobtools_Step1_'"$Met"'.out
+#SBATCH --error /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'/Myrmeco_blobtools_Step1_'"$Met"'.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 20
+#SBATCH --mem 40G 
+#SBATCH --time 60:00:00 
+#SBATCH --export NONE
+
+#module load gcc/9.3.0 blast-plus/2.11.0
+export BLASTDB=/work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nt/
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'
+
+/users/vmerel/softs/ncbi-blast-2.12.0+/bin/blastn -query '"$Asm"' \
+-db nt \
+-outfmt '"'"'6 qseqid staxids bitscore evalue std sscinames sskingdoms stitle'"'"' \
+-max_target_seqs 10 \
+-max_hsps 1 \
+-evalue 1e-25 \
+-num_threads 20 \
+-out '"$Asm"'.vs.nt.max10.1e25.blastn.out' > /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/$Met/Myrmeco_blobtools_Step1_$Met.sh
+
+#sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/$Met/Myrmeco_blobtools_Step1_$Met.sh
+done
+```
+
+## Map reads for coverage estimation
+
+```{bash, eval=F}
+
+#A conda env
+module load gcc/9.3.0 python/3.8.8 miniconda3
+conda create -p /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/py2 python=2.7
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/py2
+conda install -c anaconda biopython
+#Test
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/ipa
+python ../contamination_filtration.py
+conda deactivate
+
+#
+Asms=`ls /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/*/*asm.fasta | xargs -n 1 basename`
+
+for Asm in $Asms
+do
+  echo $Asm
+  Met=`echo $Asm | cut -f 1 -d '.'`
+  echo $Met
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /scratch/vmerel/
+#SBATCH --job-name Myrmeco_blobtools_Step2_'"$Met"'
+#SBATCH --output /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'/Myrmeco_blobtools_Step2_'"$Met"'.out
+#SBATCH --error /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'/Myrmeco_blobtools_Step2_'"$Met"'.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 20
+#SBATCH --mem 48G 
+#SBATCH --time 02:00:00 
+#SBATCH --export NONE
+
+module load gcc/9.3.0 blast-plus/2.11.0 minimap2/2.19 samtools/1.12
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'
+
+minimap2 -ax asm20 \
+'"$Asm"' \
+../../alex.fastq.gz \
+-t 20 | samtools sort -o '"$Met"'.sorted.bam
+
+#Extract coverage
+module load bbmap/38.63
+
+pileup.sh in='"$Met"'.sorted.bam out='"$Met"'.sorted.cov
+
+module load gcc/9.3.0 python/3.8.8 miniconda3
+
+eval "$(conda shell.bash hook)"
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/py2
+
+python ../contamination_filtration.py \ #Did not work
+-s extract_coverage \
+-i1 '"$Met"'.sorted.cov \
+-o '"$Met"'.sorted.formatted_cov
+
+conda deactivate' > /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/$Met/Myrmeco_blobtools_Step2_$Met.sh
+
+#sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/$Met/Myrmeco_blobtools_Step2_$Met.sh
+done
+
+# Reformat the output to <Name_scaffold>\t<Coverage>
+## Changed by VM / <Name_scaffold>\t0\t<Coverage>
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/hifiasm/
+echo -e '# contig_id\tread_cov\tbase_cov' > parsed.hifiasm.sorted.cov
+awk {'printf ("%s\tx\t%s\n", $1, $2)'} hifiasm.sorted.cov  | awk '{if(NR>1)print}' >> parsed.hifiasm.sorted.cov
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/ipa/
+echo -e '# contig_id\tread_cov\tbase_cov' > parsed.ipa.sorted.cov
+awk {'printf ("%s\tx\t%s\n", $1, $2)'} ipa.sorted.cov  | awk '{if(NR>1)print}' >> parsed.ipa.sorted.cov 
+
+```
+
+## Blobtools
+
+```{bash, eval=F}
+#Prerequisites
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db
+wget https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz
+tar -zxvf taxdump.tar.gz 
+
+#Install
+cd ~/softs
+git clone https://github.com/DRL/blobtools.git
+cd blobtools
+#A conda env for dependencies
+Sinteractive -c 2 -m 8G -t 01:00:00
+module load gcc/9.3.0 python/3.8.8 miniconda3
+conda create -p /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/blobtools
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/blobtools
+conda install -c anaconda matplotlib docopt tqdm wget pyyaml git
+conda install -c bioconda pysam --update-deps
+conda install samtools=1.10 #Vm
+samtools
+
+#Run
+Asms=`ls /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/*/*asm.fasta | xargs -n 1 basename`
+
+for Asm in $Asms
+do
+  echo $Asm
+  Met=`echo $Asm | cut -f 1 -d '.'`
+  echo $Met
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /scratch/vmerel/
+#SBATCH --job-name Myrmeco_blobtools_Step2_'"$Met"'
+#SBATCH --output /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'/Myrmeco_blobtools_Step3_'"$Met"'.out
+#SBATCH --error /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'/Myrmeco_blobtools_Step3_'"$Met"'.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 4
+#SBATCH --mem 16G 
+#SBATCH --time 00:10:00 
+#SBATCH --export NONE
+
+module load gcc/9.3.0 python/3.8.8 miniconda3
+
+eval "$(conda shell.bash hook)"
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/blobtools
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/'"$Met"'
+
+samtools index '"$Met"'.sorted.bam
+
+/users/vmerel/softs/blobtools/blobtools map2cov -i '"$Asm"' \
+-b '"$Met"'.sorted.bam \
+-o '"$Met"'.cov
+
+/users/vmerel/softs/blobtools/blobtools create -i '"$Asm"' \
+-t '"$Asm"'.vs.nt.max10.1e25.blastn.out \
+--nodes /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/nodes.dmp \
+--names /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/db/names.dmp \
+-c '"$Met"'.cov.'"$Met"'.sorted.bam.cov \
+-x bestsumorder \
+-o '"$Met"'.blob
+
+##Plot
+/users/vmerel/softs/blobtools/blobtools plot -i '"$Met"'.blob.blobDB.json \
+--sort count \
+--hist count \
+-x bestsumorder
+
+##Convert to table
+/users/vmerel/softs/blobtools/blobtools view -i '"$Met"'.blob.blobDB.json \
+--hits \
+--rank all \
+-x bestsumorder
+
+conda deactivate' > /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/$Met/Myrmeco_blobtools_Step3_$Met.sh
+
+#sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/$Met/Myrmeco_blobtools_Step3_$Met.sh
+
+done
+
+
+```
+
+
+## Filtering
+
+/!\\ According to the tableS above, it may be necessary to modify the list not_contaminant_phylum_list in the function contamination_identifiaction() in contamination_filtration.py and add missing animal phylum
+
+Arthropoda: Already present
+no-hit:  Already present
+Chordata:  Already present
+Proteobacteria: Non metazoan
+Mollusca:  Already present
+Echinodermata  Already present
+Ascomycota: Non metazoan
+Actinobacteria: Non metazoan
+Bacteroidetes: Non metazoan
+
+Well, nothing is changed finally ...
+
+
+```{bash, eval=F}
+Sinteractive -c 4 -m 8G -t 00:30:00
+
+eval "$(conda shell.bash hook)"
+conda activate /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/py2
+module load gcc/9.3.0 bbmap/38.63
+
+cd /work/FAC/FBM/DEE/tschwand/default/vmerel/TGAs/myrmecophilus/blobtools/ipa
+rm contaminant_scaffolds.txt
+python ../contamination_filtration.py -s contamination_identification -i1 ipa.blob.blobDB.table.txt
+filterbyname.sh in=ipa.asm.fasta \
+names=contaminant_scaffolds.txt \
+overwrite=true \
+out=ipa.asm.decontaminated.fasta include=f
+
+conda deactivate
+```
+
+# HiC scaffolding
+
+The HiC scaffolding was performed using arima pipeline and yahs, the whole thing was wrapped into a snakemake pipeline that you can find in the folder snakemake_HiC
+
+```{bash, eval=F}
+
+echo '#!/bin/sh
+
+source ~/.bashrc
+conda activate snakemake
+
+cd /scratch/vmerel/HiC_scaffolding/Mms
+
+snakemake \
+--profile curnagl/ \
+--cluster-status curnagl/status-sacct.sh \
+--use-singularity \
+--singularity-args "-B /scratch/vmerel/HiC_scaffolding/Mms/" \
+--config folder=/scratch/vmerel/HiC_scaffolding/Mms  \
+sampling_prop=1 \
+QC=57'>  Run.sh
+
+nohup sh Run.sh &> Run.log &
+```

@@ -1,0 +1,11 @@
+name: bam_stats-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - bbmap  = 38.98
+
+
+    
+
+    

@@ -1,0 +1,8 @@
+name: bwa-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - bioawk = 1.0
+
+    

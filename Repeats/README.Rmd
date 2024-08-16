@@ -1,0 +1,202 @@
+---
+title: "MSE"
+subtitle: Repeats
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# RepeatModeler
+
+```{bash, eval=F}
+rm -rf /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa ./
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler
+#SBATCH --job-name RepeatModeler_Mms
+#SBATCH --output RepeatModeler_Mms.out
+#SBATCH --error RepeatModeler_Mms.err
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 20
+#SBATCH --mem 120G 
+#SBATCH --time 70:00:00 
+#SBATCH --export NONE
+
+module load singularity
+singularity exec --bind /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/:/work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/ \
+--pwd /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/ \
+docker://dfam/tetools:latest \
+BuildDatabase -name genome Mms_female.fa
+
+singularity exec --bind /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/:/work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/ \
+--pwd /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/ \
+docker://dfam/tetools:latest \
+RepeatModeler -database genome \
+-threads 20 \
+-LTRStruct >& /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/RepeatModeler_Mms.log' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/RepeatModeler_Mms.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/RepeatModeler_Mms.sh
+
+#OLD
+#mkdir -p /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatModeler
+#cp /scratch/vmerel/RepeatModeler/* /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatModeler #no -r on purpose
+```
+
+# Classification
+
+```{bash, eval=F}
+grep '>' /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/genome-families.fa |\
+sed 's/>//g' |\
+awk -F'[/# (]' '{
+if ($2=="Unknown")
+  print $1 "\tUnknown\tUnknown";
+else if ($2=="tRNA" || $2=="Simple_repeat" || $3=="")
+        print $1 "\t" $2 "\t" $2;
+    else 
+        print $1 "\t" $2 "\t" $3;
+}' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/RM.classi
+
+wc -l /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/RM.classi
+#3398
+
+```
+
+# RepeatMasker
+
+```{bash, eval=F}
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker
+
+cp /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/genome-families.fa ./
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa ./
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker
+#SBATCH --job-name Mms_RepeatMasker
+#SBATCH --output Mms_RepeatMasker.out
+#SBATCH --error Mms_RepeatMasker.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 16
+#SBATCH --mem 20G 
+#SBATCH --time 24:00:00 
+#SBATCH --export NONE
+
+date
+
+module load singularity
+
+#-s \ -cutoff 200 \  -gccalc \ 
+
+singularity exec --bind /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/://work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/ \
+--pwd /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/ \
+docker://dfam/tetools:latest \
+RepeatMasker -gff \
+-u \
+-a \
+-pa 4 \
+-lib genome-families.fa \
+Mms_female.fa
+
+date' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_RepeatMasker.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_RepeatMasker.sh
+
+```
+
+# TRF
+
+```{bash, eval=F}
+rm -r /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF
+
+ln -s /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatModeler/Mms_female.fa \
+/work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF/
+
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF
+#SBATCH --job-name TRF_Mms
+#SBATCH --output TRF_Mms.out
+#SBATCH --error TRF_Mms.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 4
+#SBATCH --mem 8G 
+#SBATCH --time 48:00:00 
+#SBATCH --export NONE
+
+module load gcc/10.4.0 trf/4.09.1
+
+trf Mms_female.fa 2 7 7 80 10 50 2000 -f -d -m -ngs > Mms_female.dat
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF/TRF_Mms.sh
+
+sbatch  /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF/TRF_Mms.sh
+
+
+#module load gcc/10.4.0 perl/5.34.1
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF/
+#perl /users/vmerel/softs//TRF_parse.pl Mms_female.fa.2.7.7.80.10.50.500.dat Mms
+#BBBAAADDD
+scp /home/vmerel/mse/Repeats/trf2gff.py vmerel@curnagl.dcsr.unil.ch:/users/vmerel/softs
+python /users/vmerel/softs/trf2gff.py --dat Mms_female.dat --output Mms.gff 
+#
+```
+
+
+# Let's combine
+
+```{bash, eval=F}
+head /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.out.gff
+
+cat /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/RepeatMasker/Mms_female.fa.out.gff /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/TRF/Mms.gff >  /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/Repeats.gff
+
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa ./
+module load gcc samtools
+samtools faidx Mms_female.fa
+
+/users/vmerel/softs/bedtools sort \
+-i /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/Repeats.gff \
+-faidx /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/Mms_female.fa.fai > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/Repeats.sorted.gff
+
+rm /work/FAC/FBM/DEE/tschwand/myrmecophilus/Repeats/Mms_female.fa*
+
+
+```
+

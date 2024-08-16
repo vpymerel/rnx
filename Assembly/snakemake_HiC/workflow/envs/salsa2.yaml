@@ -1,0 +1,7 @@
+name: salsa2-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - salsa2 = 2.3
+    

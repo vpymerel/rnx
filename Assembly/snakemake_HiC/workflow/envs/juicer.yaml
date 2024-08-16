@@ -1,0 +1,9 @@
+name: juicer-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - java-jdk = 8.0.112
+    - bwa = 0.7.17
+    - samtools = 1.15.1
+    

@@ -1,0 +1,6 @@
+name: yahs-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - yahs = 1.2a.2

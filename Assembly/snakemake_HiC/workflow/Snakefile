@@ -1,0 +1,92 @@
+# Main entrypoint of the workflow. 
+# Please follow the best practices: 
+# https://snakemake.readthedocs.io/en/stable/snakefiles/best_practices.html,
+# in particular regarding the standardized folder structure mentioned there. 
+
+################################################################################
+# Globals                                                                      #
+################################################################################
+
+# SAMPLES
+import pandas as pd
+samples_info = pd.read_table("config/samples.tsv").set_index("samples", drop=False)
+
+SAMPLES=config['SAMPLES']
+
+# READS PAIRS
+FR=['R1','R2']
+
+# METHODS A
+#METHODS=['ThreeD_DNA','salsa2','yahs']
+METHODS=['yahs']
+
+wildcard_constraints:
+    fr = 'R1|R2'
+    
+################################################################################
+# Functions                                                                    #
+################################################################################
+
+#Could be way better !
+
+def get_sample_enzyme_as_list(wildcards):
+    """Returns enzyme for given sample."""
+    String = samples_info.enzyme[wildcards.sample]
+    List = String.split(",")
+    return(str(List))
+
+################################################################################
+# Rules                                                                        #
+################################################################################
+
+include: 'rules/data.smk'
+include: 'rules/qc.smk'
+include: 'rules/arima.smk'
+include: 'rules/salsa2.smk'
+include: 'rules/yahs.smk'
+include: 'rules/ThreeD_dna.smk'
+include: 'rules/juicer.smk'
+
+rule all:
+    input:
+        fastqc = expand("results/{sample}/fastqc/",
+        sample = SAMPLES),
+        
+        bamqcs = expand("results/{sample}/mapped/{sample}_{fr}.sorted_stats/qualimap.pdf",
+        sample = SAMPLES,
+        fr = FR),
+        
+        fastas = expand('results/{sample}/{method}.fa',
+        sample = SAMPLES,
+        method = METHODS),
+        
+        hic = expand('results/{sample}/{method}.hic',
+        sample = SAMPLES,
+        method = METHODS),
+
+        fastas_stats = expand('results/{sample}/{method}.fa.stats',
+        sample = SAMPLES,
+        method = METHODS)
+
+      
+################################################################################
+# Stats                                                                        #
+################################################################################
+       
+rule fa_stats:
+    input:
+        'results/{sample}/{method}.fa'
+    output:
+        'results/{sample}/{method}.fa.stats'
+    log:
+        'logs/{sample}.{method}.fa_stats'
+    conda:
+        'envs/fa_stats.yaml'
+    threads:
+        4
+    resources:
+        mem_mb = 8000
+    params:
+        runtime = '0-00:30:00'
+    shell:
+        "stats.sh {input} > {output}"

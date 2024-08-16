@@ -1,0 +1,12 @@
+name: ThreeD_DNA-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+  - bash >=5.0.018
+  - coreutils >=8.32
+  - gawk >=5.1.0
+  - lastz >=1.04.15
+  - openjdk >=8.0.152
+  - parallel >=20211222
+    

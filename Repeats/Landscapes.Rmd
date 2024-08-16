@@ -1,0 +1,148 @@
+---
+title: "MSE"
+subtitle: Repeats
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Landscape
+
+Creating landscape from RepeatMasker output
+
+```{bash, eval=F}
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatMasker
+#SBATCH --job-name parseRM_p
+#SBATCH --output parseRM_p.out
+#SBATCH --error parseRM_p.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 2
+#SBATCH --mem 120G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+module load gcc perl
+
+perl /users/vmerel/softs/Parsing-RepeatMasker-Outputs/parseRM.pl \
+-i yahs.fa.align \
+-p \
+-f yahs.fa \
+-v' >  /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatMasker/parseRM_p.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatMasker/parseRM_p.sh
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatMasker
+#SBATCH --job-name parseRM_l
+#SBATCH --output parseRM_l.out
+#SBATCH --error parseRM_l.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 2
+#SBATCH --mem 120G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+module load gcc perl
+
+perl /users/vmerel/softs/Parsing-RepeatMasker-Outputs/parseRM.pl \
+-i yahs.fa.align \
+-l 50,0.1 \
+-v ' >  /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatMasker/parseRM_l.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Repeats/RepeatMasker/parseRM_l.sh
+
+
+```
+
+# Plot
+
+```{R, eval=F}
+
+sed  '/^$/d' yahs.fa.align.landscape.Div.Rclass.tab | sed 's/\[//g' |  sed 's/;/_/g' | grep -v "%" > yahs.fa.align.landscape.Div.Rclass.csv
+
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+
+df <- read.csv2("yahs.fa.align.landscape.Div.Rclass.csv", 
+                sep="\t")
+
+df <- df %>%
+  tidyr::pivot_longer(
+    cols=2:ncol(df),
+    names_to="div") 
+
+df$div <- str_replace(df$div,"X","")
+
+df <- df %>%
+  separate(col = div,
+           into = c("lower","upper"),
+           sep="_") %>%
+  mutate(Divergence = (as.numeric(lower)+as.numeric(upper))/2)
+
+#Let's go for genomic percentage
+df <- df %>%
+  mutate(Per=(value/565572175)*100)
+
+#Facetting
+df <- df %>%
+  mutate(Facet=ifelse(Rclass=="Unknown", "Unknown", "TEs"))
+
+#Removing others
+df <- df[df$Rclass!="Other",]
+
+plot <- ggplot(df[df$Rclass!="Unknown",],
+       aes(x=Divergence,
+           y=Per,
+           fill=Rclass))+
+  geom_bar(stat = "identity")+
+  scale_fill_manual(values=c("#ff936c", #DNA
+                      "#8fa1cf", #LINE
+                      "#489e42", #LTR
+                      #"lightgray", #Other
+                      "#dd66ddff", #RC
+                      "#b966f4")) +
+  xlim(c(0,40))+
+  ylab("Percentage of genome")+
+  xlab("Kimura substitution level (CpG adjusted)")+
+  theme_bw()+
+  theme(legend.position = c(0.8,0.75),
+        legend.title=element_blank(),
+        legend.box.background = element_rect(colour = "black"))
+ggsave("TE_landscape.png",
+       units="mm",
+       width=170,
+       height=110)
+
+```
+
+

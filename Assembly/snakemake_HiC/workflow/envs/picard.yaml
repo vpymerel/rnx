@@ -1,0 +1,11 @@
+name: picard-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - java-jdk = 8.0.112
+
+
+    
+
+    

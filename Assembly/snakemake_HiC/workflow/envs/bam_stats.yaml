@@ -1,0 +1,12 @@
+name: bam_stats-env
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - samtools = 1.15.1
+    - perl = 5.32.1
+
+
+    
+
+    

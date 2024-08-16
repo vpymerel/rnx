@@ -1,0 +1,118 @@
+---
+title: "Myrmecophilus"
+subtitle: Genome assembly (HiFi)
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{bash, eval=F}
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny
+```
+
+# Downloading public COI sequences from NCBI
+
+```{bash, eval=F}
+# Nucleotide research
+# Research Terms: (Myrmecophilus[Organism] AND (COI[Gene Name] OR COX1[Gene Name] or CO1[Gene Name] or COXI[Gene Name])  NOT complete genome) 
+# Send to -> Complete record; File; Format Fasta; Sort by Organism Name
+#31 aout
+
+scp /home/vmerel/Downloads/sequence.fasta vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny/COI_NCBI.fa
+```
+
+# Retrieving private sequences
+
+These sequences comprise the outgroup
+
+```{bash, eval=F}
+mkdir /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Mitochondrial
+```
+
+# Filtering too small sequences
+
+```{bash, eval=F}
+~/soft/bioawk/bioawk -c fastx '{ print $name, length($seq) }' < ~/MSE/Phylogeny/MITOCHONDRIAL_DATA/MITOCHONDRIAL_DATA/all_sequences/fasta/all.fasta > ~/MSE/Phylogeny/MITOCHONDRIAL_DATA/MITOCHONDRIAL_DATA/all_sequences/fasta/all.sizes
+```
+
+```{r, eval=F}
+all <- read.delim("/media/vmerel/CE7D-1593/Phylogeny/MITOCHONDRIAL_DATA/MITOCHONDRIAL_DATA/all_sequences/fasta/all.sizes", header=FALSE)
+colnames(all) <- c("seq","size")
+
+ggplot(all,
+       aes(x="Plop",
+           y=size))+
+  geom_boxplot()
+```
+
+```{bash, eval=F}
+~/soft/bioawk/bioawk -c fastx '{ if(length($seq) > 600) { print ">"$name; print $seq }}' < ~/MSE/Phylogeny/MITOCHONDRIAL_DATA/MITOCHONDRIAL_DATA/all_sequences/fasta/all.fasta > ~/MSE/Phylogeny/MITOCHONDRIAL_DATA/MITOCHONDRIAL_DATA/all_sequences/fasta/all_filtered.fasta
+```
+
+# Concatenating
+
+
+```{bash, eval=F}
+
+cat /home/vincent/MSE/Phylogeny/COI_NCBI.fa ~/MSE/Phylogeny/MITOCHONDRIAL_DATA/MITOCHONDRIAL_DATA/all_sequences/fasta/all_filtered.fasta > /home/vincent/MSE/Phylogeny/All.fa
+
+```
+
+# Aligning
+
+```{bash, eval=F}
+# Seaview align (clustalo); gblock > /home/vincent/MSE/Phylogeny/All.aln
+/home/vincent/soft/seaview5-64/seaview/seaview /home/vincent/MSE/Phylogeny/All.fa
+```
+
+# Tree construction
+
+```{bash, eval=F}
+scp /home/vincent/MSE/Phylogeny/All.aln  \
+vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Phylogeny/All.aln
+
+###It start again here 
+cp /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/Phylogeny/All.aln /work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny
+#SBATCH --job-name iqtree
+#SBATCH --output iqtree.out
+#SBATCH --error iqtree.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 4
+#SBATCH --mem 16G 
+#SBATCH --time 12:00:00 
+
+~/softs/iqtree-1.6.12-Linux/bin/iqtree \
+-s All.aln \
+-nt 4 \
+-bb 10000 \
+-redo ' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny/iqtree.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/Phylogeny/iqtree.sh
+
+#-bb 1000 \
+/home/vincent/soft/seaview5-64/seaview/seaview /home/vincent/MSE/Phylogeny/All.aln
+
+
+
+```
+

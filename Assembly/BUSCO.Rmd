@@ -1,0 +1,45 @@
+
+# BUSCO
+
+```{bash, eval=F}
+mkdir /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies
+cp /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/assembly/HiC_scaffolding/results/Mms/yahs/yahs.out_scaffolds_final.fa /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa
+
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/Assemblies/Mms_female/busco
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa /work/FAC/FBM/DEE/tschwand/myrmecophilus/Assemblies/Mms_female/busco
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/Assemblies/Mms_female/busco
+#SBATCH --job-name BUSCO
+#SBATCH --output BUSCO.out
+#SBATCH --error BUSCO.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 12
+#SBATCH --mem 24G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+module load singularity
+
+singularity exec --bind /work/FAC/FBM/DEE/tschwand/myrmecophilus/Assemblies/Mms_female/busco:/work/FAC/FBM/DEE/tschwand/myrmecophilus/Assemblies/Mms_female/busco \
+/users/vmerel/softs/busco_v5.2.2_cv2.sif \
+busco -m genome \
+-i ./Mms_female.fa \
+-o busco \
+-l insecta_odb10 \
+-f \
+-c 12 ' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/Assemblies/Mms_female/busco/BUSCO.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/Assemblies/Mms_female/busco/BUSCO.sh
+
+
+```

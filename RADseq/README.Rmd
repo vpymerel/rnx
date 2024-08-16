@@ -1,0 +1,1025 @@
+---
+title: "RADseq"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Getting data
+
+```{bash, eval=F}
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw
+mkdir -p /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/barcodes
+
+nohup cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/RAD/svogel6/myrmecophilus/raw/*all.fastq.gz /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw > /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw/cp.log &
+nohup cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/RAD/svogel6/myrmecophilus/barcodes/* /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/barcodes > /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/barcodes/cp.log &
+```
+
+
+# FastQC
+
+Let's have a look at quality 
+
+```{bash, eval=F}
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw
+
+FQs=`ls *.fastq.gz | tr '\n' ' '`
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw
+#SBATCH --job-name fastqc
+#SBATCH --output fastqc.out
+#SBATCH --error fastqc.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 12
+#SBATCH --mem 12G 
+#SBATCH --time 06:00:00 
+#SBATCH --export NONE
+
+module load gcc fastqc/0.11.9
+fastqc -t 12 '"$FQs"'' > fastqc.sh
+
+sbatch fastqc.sh
+
+#sshpass -p "********!" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw/*html ~/Desktop/Tmp
+```
+
+# Process radtags
+
+In the clean folder, there should be "processed" RADseq data ... however reads in this folder contains adapters.
+
+```{bash, eval=F}
+
+#Note that if your data are double-digested, but only single-end reads were sequenced, then you do not need to specify the second restriction enzyme used.
+
+that is not good 
+--adapter-1 AGATCGGAAGAG #why ?
+
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/
+
+for barcode in `ls /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/barcodes/`
+do
+
+  echo "#"
+  echo $barcode
+
+  if [ $barcode == "C+" ]
+  then
+    file="C"
+  else
+    file=$barcode
+  fi
+
+  echo $file
+  
+  echo '#!/bin/bash
+
+#SBATCH --account=tschwand_default
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw
+#SBATCH --job-name='"$barcode"'
+#SBATCH --nodes=1
+#SBATCH --mem=8G
+#SBATCH --partition=cpu
+#SBATCH --output='"$barcode"'.out
+#SBATCH --error='"$barcode"'.err
+#SBATCH --time=12:00:00
+#SBATCH --mail-type=NONE
+#SBATCH --cpus-per-task=1
+
+module load gcc stacks/2.53
+
+process_radtags -f /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw/Myr_'"$file"'_all.fastq.gz \
+-b /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/barcodes/'"$barcode"' \
+-o /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/ \
+-i "gzfastq" \
+-e "ecoRI" \
+-c \
+-q \
+-r \
+-t 118 \
+--filter_illumina \
+--adapter-1 AGATCGGAAGAG' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw/$barcode.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/raw/$barcode.sh
+
+done
+
+
+```
+
+# FastQC again
+
+Let's have a look at quality 
+
+```{bash, eval=F}
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean
+
+FQs=`ls *.fq.gz | tr '\n' ' '`
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean
+#SBATCH --job-name fastqc
+#SBATCH --output fastqc.out
+#SBATCH --error fastqc.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 12
+#SBATCH --mem 12G 
+#SBATCH --time 06:00:00 
+#SBATCH --export NONE
+
+module load gcc fastqc/0.11.9
+fastqc -t 12 '"$FQs"'' > fastqc.sh
+
+sbatch fastqc.sh
+
+#sshpass -p "*****" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/*html ~/Desktop/Tmp
+```
+
+# Mapping
+
+Two mapping strategies were tested, the "classical" bwa and stampy. Stampy is supposed to be more sensitive, which may be helpful to map reads from M. fuscus and "M. undescribed" to M. myrmecophilus ref. genome
+
+## bwa
+
+```{bash, eval=F}
+#bwa_mem_SLURM_script_maker.sh is a small script to create a mapping script per sample
+#it is provided in this folder
+
+cp /work/FAC/FBM/DEE/tschwand/default/vmerel/MSE/RADseq/svogel/clean/bwa_mem_SLURM_script_maker.sh \
+/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/
+#gcc/9.3.0 to gcc/10.4.0
+#samtools/1.12 tp samtools/1.15.1
+#.bwa. $(pwd)/mapped/${j}.bwa.bam
+
+
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa ./
+
+
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/
+bash /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean//bwa_mem_SLURM_script_maker.sh \
+/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/ \
+/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/Mms_female.fa \
+4
+
+Sinteractive -c 2 -m 4G -t 01:00:00
+module load gcc/ bwa/0.7.17
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/
+bwa index Mms_female.fa
+
+Scripts=`ls /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/bwa_mem_SLURM_scripts/*slurm.sh`
+
+for Script in $Scripts
+do
+  sbatch $Script
+done
+
+```
+
+## stampy
+
+```{bash, eval=F}
+
+
+
+#Build a genome (.stidx) file:
+Sinteractive -c 2 -m 4G -t 01:00:00
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/ 
+conda activate /scratch/vmerel/stampy/env
+/scratch/vmerel/stampy/env/bin/python2.7 /scratch/vmerel/stampy/env/stampy-1.0.32/stampy.py \
+-G Mms Mms_female.fa
+
+#Build a hash (.sthash) file:
+/scratch/vmerel/stampy/env/bin/python2.7 /scratch/vmerel/stampy/env/stampy-1.0.32/stampy.py \
+-g Mms -H Mms
+
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/
+for file in *fq.gz
+do
+  echo $file
+  Sample=${file::-6}
+  echo $Sample
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped
+#SBATCH --job-name '"$Sample"'.stampy
+#SBATCH --output '"$Sample"'.stampy.out
+#SBATCH --error '"$Sample"'.stampy.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 4
+#SBATCH --mem 12G 
+#SBATCH --time 06:00:00 
+#SBATCH --export NONE
+
+source ~/.bashrc
+conda activate /scratch/vmerel/stampy/env
+
+/scratch/vmerel/stampy/env/bin/python2.7 /scratch/vmerel/stampy/env/stampy-1.0.32/stampy.py \
+--substitutionrate=0.15 \
+-g ../clean/Mms \
+-h ../clean/Mms \
+-t 4 \
+-M ../clean/'"$file"' > '"$Sample"'.stampy.sam
+
+conda deactivate
+
+module load gcc samtools
+samtools sort -@ 4 '"$Sample"'.stampy.sam -O bam > '"$Sample"'.stampy.bam' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/$Sample.stampy.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/$Sample.stampy.sh
+done
+
+```
+
+## Comparison
+
+```{bash, eval=F}
+
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/
+
+
+for File in *bam
+do
+  
+  Sample=`echo $File | cut -f 1 -d '.'`
+  method=`echo $File | cut -f 2 -d '.'`
+
+  echo $Sample
+  echo $method
+
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped
+#SBATCH --job-name '"$Sample"'.'"$method"'
+#SBATCH --output '"$Sample"'.'"$method"'.out
+#SBATCH --error '"$Sample"'.'"$method"'.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 2
+#SBATCH --mem 4G 
+#SBATCH --time 00:05:00 
+#SBATCH --export NONE
+
+module load gcc samtools
+
+samtools stats '"$File"' | grep ^SN | cut -f 2- > '"$File"'.tmp  
+  
+reads=`grep "raw total sequences" '"$File"'.tmp   | cut -f 2`
+mapped_reads=`grep "reads mapped:" '"$File"'.tmp   | cut -f 2`
+unmapped_reads=`grep "reads unmapped" '"$File"'.tmp   | cut -f 2`
+MQ0_reads=`grep "MQ0" '"$File"'.tmp   | cut -f 2`
+  
+error_rate=`grep "error rate" '"$File"'.tmp   | cut -f 2`
+average_quality=`grep "average quality" '"$File"'.tmp   | cut -f 2`
+
+rm '"$File"'.tmp   
+echo "'"$Sample"' '"$method"' "$reads" "$mapped_reads" "$unmapped_reads" "$MQ0_reads" "$error_rate" "$average_quality > '"$Sample"'.'"$method"'.stats
+
+  ' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/$Sample.$method.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/$Sample.$method.sh
+
+  
+done
+
+cat *stats > All.Stats
+
+scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/All.Stats ~/Desktop/Tmp
+
+```
+
+```{r, eval=F}
+library(stringr)
+library(ggplot2)
+library(dplyr)
+
+Stats <- read.table("~/Desktop/Tmp/All.Stats", quote="\"", comment.char="", fill = TRUE)
+colnames(Stats) <- c("sample","method","reads","mapped_reads","unmapped_reads","MQ0_reads","error_rate","avg_quality")
+
+Stats <- Stats %>% mutate(mapping_rate=(mapped_reads-MQ0_reads)/reads)
+
+Samples <- read.csv("~/mse/Samples/Samples.csv")[,1:4] %>%
+  mutate(sample=str_remove(sample, "19.0"))
+    
+
+df <- left_join(Stats, Samples, by="sample")
+ggplot(df,
+       aes(x=mitoch_id,
+           y=mapping_rate,
+           color=method))+
+  geom_boxplot()+
+  theme_bw()#+
+  #geom_jitter(position = position_jitter(width = .2))
+
+head(df)
+#bwa
+median(df$mapping_rate[df$mitoch_id=="myrmecophilus" & df$method=="bwa"], na.rm=T)
+#0.8573667
+median(df$mapping_rate[df$mitoch_id=="unknown" & df$method=="bwa"], na.rm=T)
+#0.7517965
+median(df$mapping_rate[df$mitoch_id=="fuscus_A" & df$method=="bwa"], na.rm=T)
+#0.6205007
+median(df$mapping_rate[df$mitoch_id=="fuscus_B" & df$method=="bwa"], na.rm=T)
+#0.6315426
+
+
+#stampy
+median(df$mapping_rate[df$mitoch_id=="myrmecophilus" & df$method=="stampy"], na.rm=T)
+##0.8842612
+median(df$mapping_rate[df$mitoch_id=="unknown" & df$method=="stampy"], na.rm=T)
+##0.8289288
+median(df$mapping_rate[df$mitoch_id=="fuscus_A" & df$method=="stampy"], na.rm=T)
+##0.7702388
+median(df$mapping_rate[df$mitoch_id=="fuscus_B" & df$method=="stampy"], na.rm=T)
+##0.7911984
+```
+
+Based on median mapping_rate, stampy is performing a bit better ... Let's continue with stampy bamfiles. 
+
+# vcf
+
+let's use stack to generate a vcf
+
+```{bash, eval=F}
+
+mkdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks
+
+ls /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/*stampy.bam |\
+xargs -n 1 basename |\
+sed 's/.stampy.bam//g' |\
+awk  '{print $1"\tall"}' > popmap.txt
+wc -l popmap.txt
+#320
+
+#Removing t-
+grep -v  't-' popmap.txt > tmp && mv tmp popmap.txt
+wc -l popmap.txt
+#319
+
+#Removing three samples with mapping rate <50%
+grep -v -E '136a|141a|045c' popmap.txt  > tmp && mv tmp popmap.txt
+wc -l popmap.txt
+#316
+
+#Removing six samples with #Reads  <10000
+#045c has already been removed
+grep -v -E '052a|247a|093a|047a|101b|218a' popmap.txt  > tmp && mv tmp popmap.txt
+wc -l popmap.txt
+#310
+
+echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks
+#SBATCH --job-name gstacks_populations
+#SBATCH --output gstacks_populations.out
+#SBATCH --error gstacks_populations.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 12
+#SBATCH --mem 80G 
+#SBATCH --time 12:00:00 
+#SBATCH --export NONE
+
+module load gcc stacks/2.53
+
+gstacks -I /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/mapped/ \
+-M ./popmap.txt \
+-S .stampy.bam \
+-O ./ -t 12
+
+populations -P ./ \
+-M ./popmap.txt \
+--vcf \
+--genepop \
+--fstats \
+--smooth \
+--min-maf 0 \
+--write-single-snp \
+--hwe -t 12
+
+#-r 0.65 \
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/gstacks_populations.sh
+
+sbatch /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/gstacks_populations.sh
+
+
+```
+
+Let's extract auto from vcf
+
+```{bash, eval=F}
+
+#highlights = Mms scaffold_1 0 128000000 red;Mms scaffold_1 128000000 145000000 pink;Mms scaffold_1 145000000 158000000 green;Mms scaffold_1 158000000 170024704 blue
+Sinteractive -c 4 -m 8G -t 00:30:00
+module load gcc vcftools/0.1.14
+
+cd /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/
+
+#Auto
+vcftools \
+--vcf populations.snps.vcf \
+--not-chr scaffold_1 \
+--recode \
+--recode-INFO-all --out Auto.All
+
+
+```
+
+
+# PCA all samples (Figure 1B)
+
+## R script
+
+```{r, eval=F}
+
+echo 'library(vcfR)
+library(adegenet)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(svglite)
+library(parallel)
+
+setwd("/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/")
+
+args = commandArgs(trailingOnly=TRUE)
+
+vcf <- read.vcfR(file=paste(args[1],
+                            ".All.recode.vcf",
+                            sep=""),verbose=T)
+vcf <- vcfR2genlight(vcf)
+ploidy(vcf) <- 2
+#
+toRemove <- is.na(glMean(vcf, alleleAsUnit = FALSE)) # TRUE where NA
+which(toRemove) # position of entirely non-typed loci
+vcf <- vcf[, !toRemove]
+
+Nloci=length(vcf$loc.names)
+
+Myrmecophilus_samples_simon <- read.delim("Myrmecophilus_samples_simon.csv") %>%
+  mutate(Ind=substr(ID,5,8))
+head(Myrmecophilus_samples_simon)
+#Adding sp
+Myrmecophilus_samples_simon$sp <- as.character(Myrmecophilus_samples_simon$species)
+Myrmecophilus_samples_simon$sp[Myrmecophilus_samples_simon$species=="anymphs (unidentified)"] <- "nd" 
+Myrmecophilus_samples_simon$sp[Myrmecophilus_samples_simon$species=="M. aequispina"] <- "aequispina" 
+Myrmecophilus_samples_simon$sp[Myrmecophilus_samples_simon$species=="M. myrmecophilus"] <- "myrmecophilus" 
+
+pca <- adegenet::glPca(vcf,
+                       nf = 10,
+                       parallel = TRUE,
+                       loadings=FALSE,
+                       n.cores = 8) #
+PC = 1
+    
+pca_df <- data.frame(pc1=pca$scores[,PC],
+                     pc2=pca$scores[,PC+1],
+                     pc3=pca$scores[,PC+2],
+                     na_count = apply(as.matrix(vcf), 1, function(x) sum(is.na(x))),
+                     ploidy = as.character(ploidy(vcf))) %>%
+    tibble::rownames_to_column("Ind") 
+
+head(pca_df)
+
+PCx = as.character(PC)
+PCx_Var = as.character(round(pca$eig[PC]/sum(pca$eig),2)*100)
+  
+PCy = as.character(PC+1)
+PCy_Var = as.character(round(pca$eig[PC+1]/sum(pca$eig),2)*100)
+  
+pca_df <- dplyr::left_join(x=pca_df,
+                           y=Myrmecophilus_samples_simon,
+                           by=c("Ind"))  
+
+#For redefining .Rmd
+write.table(pca_df, paste("PCA_All_",
+       args[1],
+       ".csv",sep=""))
+       
+plot <- ggplot(pca_df,
+               aes(x=pc1,
+                   y=pc2,
+                   color=sp,
+                   size= ifelse(sp=="nd",1,1.5)))+
+  geom_point()+#aes(alpha = ifelse(sp!="nd",10,7)))+ scale_alpha(range = c(1, 10))+
+  scale_size_continuous(range=(c(1,1.5)))+
+  scale_colour_manual(
+    values = c("#00CD6C", #acervorum
+               "#FF7C9F", #aequispina
+               "#AF58BA", #fuscus,
+               "#FFC61E", #gallicus
+               "#FA0043", #myrmecophilus
+               "gray")
+    )+
+  xlab(paste("PC:", PCx, " (", PCx_Var, "%) - ",Nloci," loci",sep=""))+
+  ylab(paste("PC", PCy, " : (", PCy_Var, "%)",sep=""))+
+  theme_bw()+
+  theme(legend.position="none",
+        text = element_text(size = 7))
+    
+
+ggsave(plot = plot,
+       filename = paste("PCA_All_",
+       args[1],
+       ".svg",
+       sep=""),
+       units="cm",
+       width = 8.25,
+       height= 6.66)
+
+#scp vmerel@curnagl.dcsr.unil.ch:/scratch/vmerel/RAD/stacks/*.svg /home/vmerel/mse/Manuscript/Figures/Figure_1/ 
+' > /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_All.R
+```
+
+## Run
+```{bash, eval=F}
+
+#Rscript /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_All.R XYc
+
+for Categ in "Auto" #"X0" "XYa" "XYb" "XYc" 
+do
+  echo $Categ
+  echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/
+#SBATCH --job-name PCA_All_'"$Categ"'
+#SBATCH --output PCA_All_'"$Categ"'.out
+#SBATCH --error PCA_All_'"$Categ"'.err
+
+#SBATCH --partition cpu
+
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 8
+#SBATCH --mem 16G 
+#SBATCH --time 48:00:00 
+#SBATCH --export NONE
+
+source ~/.bashrc
+conda activate Renv
+Rscript /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_All.R '"$Categ"'
+conda deactivate
+
+'> /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_All_$Categ.sh
+sbatch  /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_All_$Categ.sh
+
+done
+
+sbatch  /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks//PCA_All_XYc.sh
+```
+
+sshpass -p "*********!" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_All_*.svg \
+~/Desktop/Tmp
+sshpass -p "*********!" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_All_*.csv \
+~/Desktop/Tmp
+
+
+
+# PCA "per species"
+
+Let's create a vcf per sp. first
+
+```{bash, eval=F}
+
+awk -F,   '{print $1}' Samples.csv
+
+#Some individual are not in the tree
+awk -F,   '{if ($6=="myrmecophilus") print $1"\t"$6}' Samples.csv | grep "19.0" | sed 's/19.0//g' > Mms.popmap
+cut -f 1 Mms.popmap > Mms.list
+awk -F,   '{if ($6=="fuscus") print $1"\t"$6}' Samples.csv | grep "19.0" | sed 's/19.0//g' > Mfs.popmap
+cut -f 1 Mfs.popmap > Mfs.list
+
+module load gcc vcftools/0.1.14
+
+
+for sp in "Mms" "Mfs"
+do
+  echo $sp
+
+  for Region in "Auto" #"X0" "XYa" "XYb" "XYc" 
+  do
+  
+    VCF=$Region.All.recode.vcf
+    
+    vcftools \
+  --vcf $VCF \
+  --keep $sp.list \
+  --recode \
+  --recode-INFO-all --out $Region.$sp
+
+ done
+done
+
+
+```
+
+## R script
+
+```{r, eval=F}
+
+echo 'library(vcfR)
+library(adegenet)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(svglite)
+
+setwd("/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/")
+
+args = commandArgs(trailingOnly=TRUE)
+
+vcf <- read.vcfR(file=paste(args[1],
+                            ".",
+                            args[2],
+                            ".recode.vcf",
+                            sep=""),verbose=T)
+vcf <- vcfR2genlight(vcf)
+ploidy(vcf) <- 2
+#
+toRemove <- is.na(glMean(vcf, alleleAsUnit = FALSE)) # TRUE where NA
+which(toRemove) # position of entirely non-typed loci
+vcf <- vcf[, !toRemove]
+
+Nloci=length(vcf$loc.names)
+
+Myrmecophilus_samples_simon <- read.delim("Myrmecophilus_samples_simon.csv") %>%
+  mutate(Ind=substr(ID,5,8))
+head(Myrmecophilus_samples_simon)
+#Adding sp
+Myrmecophilus_samples_simon$sp <- as.character(Myrmecophilus_samples_simon$species)
+Myrmecophilus_samples_simon$sp[Myrmecophilus_samples_simon$species=="anymphs (unidentified)"] <- "nd" 
+Myrmecophilus_samples_simon$sp[Myrmecophilus_samples_simon$species=="M. aequispina"] <- "aequispina" 
+Myrmecophilus_samples_simon$sp[Myrmecophilus_samples_simon$species=="M. myrmecophilus"] <- "myrmecophilus" 
+
+pca <- adegenet::glPca(vcf,
+                       nf = 10,
+                       parallel = TRUE,
+                       n.cores = 8) #
+PC = 1
+    
+pca_df <- data.frame(pc1=pca$scores[,PC],
+                     pc2=pca$scores[,PC+1],
+                     pc3=pca$scores[,PC+2],
+                     na_count = apply(as.matrix(vcf), 1, function(x) sum(is.na(x))),
+                     ploidy = as.character(ploidy(vcf))) %>%
+    tibble::rownames_to_column("Ind") 
+
+PCx = as.character(PC)
+PCx_Var = as.character(round(pca$eig[PC]/sum(pca$eig),2)*100)
+  
+PCy = as.character(PC+1)
+PCy_Var = as.character(round(pca$eig[PC+1]/sum(pca$eig),2)*100)
+  
+pca_df <- dplyr::left_join(x=pca_df,
+                           y=Myrmecophilus_samples_simon,
+                           by=c("Ind")) 
+
+#For understanding 
+write.table(pca_df, paste("PCA_",
+       args[2],
+       "_",
+       args[1],
+       ".csv",sep=""))
+       
+plot <- ggplot(pca_df,
+               aes(x=pc1,
+                   y=pc2,
+                   color=sp,
+                   size= ifelse(sp=="nd",1,1.5)))+
+  geom_point()+#aes(alpha = ifelse(sp!="nd",10,7)))+ scale_alpha(range = c(1, 10))+
+    scale_size_continuous(range=(c(1,1.5)))+
+  scale_colour_manual(
+    values = c("#FF7C9F", #aequispina
+               "#FA0043", #myrmecophilus
+               "gray")
+    )+
+  xlab(paste("PC:", PCx, " (", PCx_Var, "%) - ",Nloci," loci",sep=""))+
+  ylab(paste("PC", PCy, " : (", PCy_Var, "%)",sep=""))+
+  theme_bw()+
+  theme(legend.position="none",
+        text = element_text(size = 7))
+    
+
+ggsave(plot = plot,
+       filename = paste("PCA_",
+       args[2],
+       "_",
+       args[1],
+       ".svg",
+       sep=""),
+       units="cm",
+       width = 8.25,
+       height= 6.66)
+
+#TO HELP CLASSIFICATION
+plot2 <- ggplot(pca_df,
+               aes(x=pc1,
+                   y=pc2,
+                   color=long,
+                   size= ifelse(sp=="nd",1,1.5)))+geom_point()+
+                   theme(legend.position="bottom")
+ggsave(plot = plot2,
+       filename = paste("PCA_",
+       args[2],
+       "_",
+       args[1],
+       ".long.svg",
+       sep=""),
+       units="cm",
+       width = 20,
+       height= 10)
+
+'> /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks//PCA_Mfms.R
+```
+
+## Run
+
+```{bash, eval=F}
+
+for sp in "Mms" "Mfs"
+do
+
+  for Categ in  "Auto" #"X0" "XYa" "XYb" "XYc"
+  do
+    echo $Categ
+    echo '#!/bin/bash -l
+
+#SBATCH --account=tschwand_default
+#SBATCH --mail-type NONE 
+#SBATCH --mail-user vincent.merel@unil.ch
+  
+#SBATCH --chdir /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks
+#SBATCH --job-name PCA_'"$sp"'_'"$Categ"'
+#SBATCH --output PCA_'"$sp"'_'"$Categ"'.out
+#SBATCH --error PCA_'"$sp"'_'"$Categ"'.err
+  
+#SBATCH --partition cpu
+  
+#SBATCH --nodes 1 
+#SBATCH --ntasks 1 
+#SBATCH --cpus-per-task 4
+#SBATCH --mem 16G 
+#SBATCH --time 48:00:00 
+#SBATCH --export NONE
+  
+source ~/.bashrc
+conda activate Renv
+Rscript PCA_Mfms.R '"$Categ"' '"$sp"'
+conda deactivate
+  
+'> /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks//PCA_${sp}_$Categ.sh
+sbatch  /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks//PCA_${sp}_$Categ.sh
+  
+  done
+done
+
+sshpass -p "*********!" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_Mms_*.svg \
+~/Desktop/Tmp
+sshpass -p "*********!" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_Mfs_*.svg \
+~/Desktop/Tmp
+sshpass -p "*********!" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_Mms_*.csv \
+~/Desktop/Tmp
+sshpass -p "*********!" scp vmerel@curnagl.dcsr.unil.ch:/work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/stacks/PCA_Mfs_*.csv \
+~/Desktop/Tmp
+```
+
+# Figures 
+
+```{r, eval=F}
+
+library("ggmap")
+library("ggpubr")
+
+Samples <- read.csv("~/mse/Samples/Samples.csv")
+Samples_short <- Samples[,c('sample','morpho_id','mitoch_id','radseq_id')]
+colnames(Samples_short) <- c("ID",'morpho_id',"mitoch_id",'radseq_id')
+unique(Samples$radseq_id)
+
+#longitude and lattitude are inverted
+#The Mms case
+#creating groups
+#PCA_Mms_Auto$group[PCA_Mms_Auto$pc1<(-1.75)] <-"A"
+#PCA_Mfs_Auto$group[PCA_Mfs_Auto$pc2<0 & PCA_Mfs_Auto$pc1<(-10)] <-"B"
+#PCA_Mfs_Auto$group[PCA_Mfs_Auto$pc2<0 & PCA_Mfs_Auto$pc1>(-10) & PCA_Mfs_Auto$pc1<10] <-"C"
+#PCA_Mfs_Auto$group[PCA_Mfs_Auto$pc1>10] <-"D"
+```
+
+## Figure 1B
+
+
+```{r, eval=F}
+PCA_All_Auto <- read.csv("~/Desktop/Tmp/PCA_All_Auto.csv", sep="")
+
+#Add_mitoch id
+PCA_All_Auto <- PCA_All_Auto%>% 
+  left_join(Samples_short, by="ID")
+
+#For the colors
+PCA_All_Auto$morpho_id[is.na(PCA_All_Auto$morpho_id)]="nd"
+
+PCA <- ggplot(PCA_All_Auto,
+              aes(x=pc1,
+                  y=pc2,
+                  #alpha = ifelse(!is.na(morpho_id),2,1.5),
+                  size= ifelse(morpho_id=="nd",1,1.5),
+                  color=morpho_id))+
+  geom_point(size=1.5)+
+  scale_shape(solid=FALSE)+
+  xlab("PC 1 (50%)")+
+  ylab("PC 2 (5%)")+
+  theme_bw()+
+  theme(legend.position="none",
+        text = element_text(size = 7))+
+  scale_colour_manual(
+    values =  c("#00CD6C", #acervorum
+        "#FF7C9F", #aequispina
+        "#AF58BA", #fuscus
+        "#FFC61E", #gallicus
+        "#FA0043", #myrmecophilus #FA0043
+        "gray"))
+
+ggsave(plot = PCA,
+       filename = "~/Desktop/Tmp/All.svg",
+       units="cm",
+       width = 8.25,
+       height= 6.66)
+```
+
+# Figure 1C
+
+```{r, eval=F}
+
+PCA_Mms_Auto <- read.csv("~/Desktop/Tmp/PCA_Mms_Auto.csv", sep="")
+
+#Removing one extreme outlier
+PCA_Mms_Auto <- PCA_Mms_Auto %>% filter(pc2<20 & pop!="Grece" )#& dep.=="Vaucluse"
+
+#Add_mitoch id
+PCA_Mms_Auto <- PCA_Mms_Auto%>% 
+  left_join(Samples_short, by="ID")
+
+#For the colors
+PCA_Mms_Auto$morpho_id[is.na(PCA_Mms_Auto$morpho_id)]="nd"
+
+
+PCA_Mms_Auto$new_dep <- PCA_Mms_Auto$dep 
+
+PCA_Mms_Auto$new_dep[PCA_Mms_Auto$dep=="Vaucluse"] <-"Vaucluse (autre)"
+PCA_Mms_Auto$new_dep[PCA_Mms_Auto$tri=="Mornas"] <-"Vaucluse (Mornas)"
+
+PCA_Mms_Auto$new_dep[PCA_Mms_Auto$dep=="Alpes-de-Haute-Provence"] <-"Ardèche, Bouches-Du-Rhones, Gard, Alpes-de-Haute-Provence"
+PCA_Mms_Auto$new_dep[PCA_Mms_Auto$dep=="Ardeche"] <-"Ardèche, Bouches-Du-Rhones, Gard, Alpes-de-Haute-Provence"
+PCA_Mms_Auto$new_dep[PCA_Mms_Auto$dep=="Bouches-du-Rhones"] <-"Ardèche, Bouches-Du-Rhones, Gard, Alpes-de-Haute-Provence"
+PCA_Mms_Auto$new_dep[PCA_Mms_Auto$dep=="Gard"] <-"Ardèche, Bouches-Du-Rhones, Gard, Alpes-de-Haute-Provence"
+
+
+
+#
+PCA <- ggplot(PCA_Mms_Auto,
+              aes(x=pc1,
+                  y=pc2,
+                  color=morpho_id,
+                  shape=new_dep
+                  ))+
+  geom_point(size=1.5)+#,shape=1
+  scale_shape(solid=FALSE)+
+  xlab("PC 1 (17%)")+
+  ylab("PC 2 (7%)")+
+  theme_bw()+
+  theme(legend.position="none",
+        text = element_text(size = 7))+
+  scale_colour_manual(
+    values =  c("#FF7C9F", #aequispina
+        "#FA0043", #myrmecophilus #FA0043
+        "gray"))
+
+
+ggsave(plot = PCA,
+       filename = "~/Desktop/Tmp/Mms.svg",
+       units="cm",
+       width = 8.25,
+       height= 6.66)
+```
+
+# Figure 1D
+
+```{r, eval=F}
+
+#The fuscus case
+PCA_Mfs_Auto <- read.csv("~/Desktop/Tmp/PCA_Mfs_Auto.csv", sep="")
+#Add_mitoch id
+PCA_Mfs_Auto <- PCA_Mfs_Auto%>% 
+  left_join(Samples_short, by="ID")
+
+#creating groups
+PCA_Mfs_Auto$group[PCA_Mfs_Auto$pc2>0 & PCA_Mfs_Auto$pc1<(-10)] <-"A"
+PCA_Mfs_Auto$group[PCA_Mfs_Auto$pc2<0 & PCA_Mfs_Auto$pc1<(-10)] <-"B"
+PCA_Mfs_Auto$group[PCA_Mfs_Auto$pc2<0 & PCA_Mfs_Auto$pc1>(-10) & PCA_Mfs_Auto$pc1<10] <-"C"
+PCA_Mfs_Auto$group[PCA_Mfs_Auto$pc1>10] <-"D"
+
+france <- map_data("france")
+Map <- ggplot() +
+  geom_polygon(data = france,
+               aes(x=long,
+                   y = lat,
+                   group = group,
+                   alpha=0.01)) + 
+  coord_fixed(1.3) +
+  theme_bw()+
+  geom_point(data=PCA_Mfs_Auto,
+             aes(x=lat,y=long, 
+                 shape=group), size=1.5, stroke = 0.1)+
+  scale_shape(solid=FALSE)+
+  coord_cartesian(xlim=c(2.5,7.5),ylim=c(42,44.5))+
+  theme(legend.position="none",
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(),  
+        panel.grid.minor = element_blank())
+
+#
+PCA <- ggplot(PCA_Mfs_Auto,
+              aes(x=pc1,
+                  y=pc2,
+                  shape=group, color=morpho_id))+
+  geom_point(size=1.5)+
+  scale_shape(solid=FALSE)+
+  xlab("PC 1 (32%)")+
+  ylab("PC 2 (7%)")+
+  theme_bw()+
+  theme(legend.position="none",
+        text = element_text(size = 7))+
+  scale_colour_manual(
+    values =  c("#AF58BA", #fuscus
+        "#FFC61E", #gallicus
+        "gray"))
+
+Mfs <- PCA +
+  annotation_custom(ggplotGrob(Map),
+                    xmin = 3.5,
+                    xmax = 31.5, 
+                    ymin = 8,
+                    ymax = 19.85)
+
+ggsave(plot = Mfs,
+       filename = "~/Desktop/Tmp/Mfs.svg",
+       units="cm",
+       width = 8.25,
+       height= 6.66)
+
+```
