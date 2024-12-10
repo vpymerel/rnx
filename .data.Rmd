@@ -1,0 +1,128 @@
+---
+title: "RADseq"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Assembly
+
+```{bash, eval=F}
+# cluster: /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Assemblies/Mms_female.fa
+
+# NCBI: SAMN42554425
+```
+
+## From
+
+```{bash, eval=F}
+mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/Assemblies/Mms_female.fa  /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Assemblies
+```
+
+# HiFi reads
+
+```{bash, eval=F}
+# cluster: /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/HiFi/Mms_female/Mms_female.hifi.fastq.gz
+# (mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/HiFi/Female/Mms_female.hifi.fastq.gz  /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/HiFi/Mms_female/ )
+# (mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/HiFi/Female/README.md  /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/HiFi/Mms_female/ )
+
+# NCBI: SRR30231907
+```
+
+## 
+
+# WGS
+
+```{bash, eval=F}
+/nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA
+```
+
+## From
+
+Exist in two copies apparently identical on the nas but without Mms ...
+
+```{bash, eval=F}
+du -sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/
+#74G	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/
+du -sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/*
+#114M	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Downloading_NovaSeq.log
+#24K	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Downloading_NovaSeq.sh
+#28G	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Gga
+#24K	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Linking_Illumina.log
+#24K	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Linking_Illumina.sh
+#22G	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Mfg
+#160K	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Mms
+#25G	/nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Mun
+
+
+du -sh /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus
+#74G	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus
+du -sh /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/*
+#115M	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Downloading_NovaSeq.log
+#24K	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Downloading_NovaSeq.sh
+#27G	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Gga
+#24K	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Linking_Illumina.log
+#24K	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Linking_Illumina.sh
+#22G	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Mfg
+#160K	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Mms
+#25G	/nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Mun
+
+#It is not OK ... Mms is missing ...
+##Let's recover stuff from a mix of origins ...
+##Gga - OK
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Gga/NovaSeq/* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Gga #(biggest one)
+##Mfg - OK
+cp /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Mfg/NovaSeq/* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/ #(the one used)
+mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mfg_* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mfg
+##Mms - OK
+cp /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mms/Raw/*fastq.gz /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mms 
+##Mun - OK
+cp /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mun/Raw/*fastq.gz /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mun #(the one used)
+```
+
+## To NCBi
+
+```{bash, eval=F}
+mamba create -p /scratch/vmerel/envs/aspera
+mamba activate /scratch/vmerel/envs/aspera
+mamba install install rpetit3::aspera-connect
+
+#download keyfile
+mkdir -p /users/vmerel/keys
+cd /users/vmerel/keys
+#manual -> aspera_WGS.key
+
+echo '#!/usr/bin/env bash
+
+date
+
+source ~/.bashrc
+conda activate /scratch/vmerel/envs/aspera
+
+mkdir /scratch/vmerel/ncbi_tmp_WGS
+cd /scratch/vmerel/ncbi_tmp_WGS
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Gga/*fastq.gz ./
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mfg/*fastq.gz ./
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mms/*fastq.gz ./
+cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mun/*fastq.gz ./
+
+ascp -i /users/vmerel/keys/aspera_WGS.key -QT -l100m -k1 -d /scratch/vmerel/ncbi_tmp_WGS/ subasp@upload.ncbi.nlm.nih.gov:uploads/merel.vincent_gmail.com_Rtsqk1nS
+
+date
+' > /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.sh
+
+nohup sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.sh &> /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.log &
+ 
+```
+
+du -sh 
+mkdir -p /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/
+cp -r /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus 
+
+```

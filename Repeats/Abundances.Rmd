@@ -177,10 +177,10 @@ df <- df %>%
   mutate(
     categ=
       ifelse(cs=="scaffold_1" && start < 127000000, "X0",
-             ifelse(cs=="scaffold_1" && start >= 127000000 && start < 140250000, "XYa",
-                    ifelse(cs=="scaffold_1" && start >= 140250000 && start < 157000000, "XYb",
-                    #ifelse(cs=="scaffold_1" && start >= 144000000 && start < 157000000, "XYc",
-                           ifelse(cs=="scaffold_1" && start >= 157000000 && end < 170024705, "PAR","Auto")))))
+             ifelse(cs=="scaffold_1" && start >= 127000000 && start < 140250000, "Xa",
+                    ifelse(cs=="scaffold_1" && start >= 140250000 && start < 144000000, "Xa",
+                           ifelse(cs=="scaffold_1" && start >= 144000000 && start < 157000000, "Xb",
+                                  ifelse(cs=="scaffold_1" && start >= 157000000 && end < 170024705, "Xc","Auto"))))))
 
 
 TE_df <- df %>% filter(group=="TE") %>%
@@ -190,12 +190,12 @@ TE_df <- df %>% filter(group=="TE") %>%
 #Removing one annoying outlier
 TE_df$Per[TE_df$Per>=0.85] <- NA
 
-TE_df$categ=factor(TE_df$categ, levels=c("X0","XYa","XYb","PAR","Auto")) #XYc
+TE_df$categ=factor(TE_df$categ, levels=c("X0","Xa","Xb","Xc","Auto")) #XYc
 ggplot(TE_df, aes(x=categ,
              y=Per,
              color=categ))+
   geom_boxplot() +
-  scale_colour_manual(values=c("#D46A6A","#407F7F","#55AA55","black","darkgray"))+  #","#D49A6A""
+  scale_colour_manual(values=c("#D46A6A","#407F7F","#55AA55","#a9a9a9ff","black"))+  #","#D49A6A""
   theme_bw()+
   theme(legend.position = "none",
         text = element_text(size=7),
@@ -215,17 +215,16 @@ median(TE_df$Per[TE_df$categ=="PAR"], na.rm=T)
 kruskal.test(x=TE_df$Per, g=TE_df$categ)
 median(TE_df$Per[TE_df$categ=="X0"])
 wilcox.test(TE_df$Per[TE_df$categ=="X0"], TE_df$Per[TE_df$categ=="Auto"])
-wilcox.test(TE_df$Per[TE_df$categ=="X0"], TE_df$Per[TE_df$categ=="PAR"])
 
+median(TE_df$Per[TE_df$categ=="Xa"])
+wilcox.test(TE_df$Per[TE_df$categ=="Xa"], TE_df$Per[TE_df$categ=="Auto"])
 
-wilcox.test(TE_df$Per[TE_df$categ=="XYa"], TE_df$Per[TE_df$categ=="Auto"])
-wilcox.test(TE_df$Per[TE_df$categ=="XYa"], TE_df$Per[TE_df$categ=="PAR"])
-median(TE_df$Per[TE_df$categ=="XYa"])
+median(TE_df$Per[TE_df$categ=="Xb"])
+wilcox.test(TE_df$Per[TE_df$categ=="Xb"], TE_df$Per[TE_df$categ=="Auto"])
 
+median(TE_df$Per[TE_df$categ=="Xc"])
 
-wilcox.test(TE_df$Per[TE_df$categ=="XYb"], TE_df$Per[TE_df$categ=="Auto"])
-wilcox.test(TE_df$Per[TE_df$categ=="XYc"], TE_df$Per[TE_df$categ=="Auto"])
-median(TE_df$Per[TE_df$categ=="XYc"])
+wilcox.test(TE_df$Per[TE_df$categ=="Xc"], TE_df$Per[TE_df$categ=="Auto"])
 
 mean(TE_df$Per[TE_df$categ=="X0"])/mean(TE_df$Per[TE_df$categ=="Auto"])
 
