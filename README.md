@@ -27,6 +27,7 @@ In this folder you will find the scripts necessary to reproduce analyses from [R
 
 - **README.Rmd**: from RADseq sequences to PCAs plots.
 
-# To Do
+---
 
+- **Samples.csv**: samples info.
 

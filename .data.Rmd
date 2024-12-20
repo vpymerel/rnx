@@ -125,4 +125,115 @@ du -sh
 mkdir -p /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/
 cp -r /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus 
 
+
+
+# RADseq
+
+NCBI BioSample attributes
+
+```{r,eval=F}
+Invertebrate.1.0 <- read.delim("~/Downloads/Invertebrate.1.0.tsv", comment.char="#")
+head(Invertebrate.1.0)
+#You want to fill: 
+##Sample name
+###Organism:
+
+#From the sup. directly
+Samples <- read.delim("~/Papers_git/rnx/Samples.csv")
+head(Samples)
+#You want to keep only the ones with RADseq data, and that were not filter out
+Samples <- Samples %>%
+  filter(radseq_seq=="TRUE")
+
+#19.0274a should be "unknown", it is the weird gallicus
+Samples$radseq_id[Samples$sample=="19.0274a"]<-"ambiguous"
+#19.0248a should be "fuscus"
+Samples$radseq_id[Samples$sample=="19.0248a"]<-"fuscus"
+
+#isolate to status
+Samples$status[Samples$status=="femelle"]="Female"
+Samples$status[Samples$status=="larve femelle"]="Female larvae"
+Samples$status[Samples$status=="larve indet"]="Larvae"
+Samples$status[Samples$status=="larve male"]="Male larvae"
+Samples$status[Samples$status=="male"]="Male"
+
+summary(as.factor(Samples$host))
+Samples$host[Samples$host=="indet."]="Non determined"
+
+summary(as.factor(Samples$yyyy))
+summary(as.factor(Samples$mm))
+
+summary(as.factor(Samples$dep.))
+Samples$country = ifelse(Samples$`dep.`=="Grece:", "Greece", "France:")
+
+
+##For tissue
+
+OldSamples <- read.delim("~/mse/RADseq/Myrmecophilus_samples_simon.csv") %>% select(c("ex_gri","ID"))
+colnames(OldSamples) <-c("tissue","sample")
+Samples <- left_join(Samples, OldSamples, by="sample")  
+summary(as.factor(Samples$tissue))
+Samples$tissue[Samples$tissue=="entiere"]="Whole body"
+Samples$tissue[Samples$tissue=="femur"]="Leg"
+
+
+###########################################################################
+#You need sample name in isolate because ...
+#NCBI: "Your table upload failed because multiple rows in the table (ignoring sample name, sample title and description fields) are identical. Each row must have at least one unique attribute value. Please enter information that distinguishes each sample, eg isolate names or different details of the sample collection. If the distinguishing information is in the sample name, title or description, please copy that value into the appropriate attribute, either one of the predefined attributes or a custom attribute you add. "
+
+df <- data.frame(
+  sample_name=Samples$sample,
+  organism=
+    paste("Myrmecophilus",
+          ifelse(Samples$radseq_id %in% c("ambiguous","unknown"), "sp.", Samples$radseq_id)),
+  isolate=paste(Samples$sample,Samples$status,sep="-"),
+  host=Samples$host,
+  collection_date=paste(Samples$yyyy,Samples$mm,sep="-"),
+  geo_loc_name=paste(Samples$country,Samples$dep.,sep=" "),
+  tissue=Samples$tissue
+  
+  )
+
+write.table(df,"~/Desktop/ncbi_tmp/tmp.tsv", quote=F, sep="\t", row.names=F)
+###########################################################################
+
+```
+
+NCBI SRA metadata
+
+You can't upload raw data, NCBI want one filename per sample ...
+
+```{r,eval=F}
+OldSamples <- read.delim("~/mse/RADseq/Myrmecophilus_samples_simon.csv") %>% select(c("Plaque_myr","ID"))
+colnames(OldSamples) <-c("filename","sample")
+Samples <- left_join(Samples, OldSamples, by="sample")  
+summary(as.factor(Samples$filename))
+
+#filename 1: fastq
+#filename 2: barcorde
+
+#C+ 021a, 027a
+Samples$barcodes=ifelse(Samples$filename %in% c("19.0021a","19.0027a"),"C+", Samples$filename)
+
+
+df <- data.frame(
+  sample_name=Samples$sample,
+  library_ID=Samples$sample,
+  title="RADseq myrmecophilus",
+  library_strategy="RAD-Seq",
+  library_source="GENOMIC",
+  library_selection="PCR",
+  library_layout="single",
+  platform="ILLUMINA",
+  instrument_model="Illumina HiSeq 2500",
+  design_description="double-digest ddRADseq libraries following Brelsford et al. 2017",
+  filetype="fastq",
+  filename=paste("Myr_",Samples$filename,"_all.fastq.gz",sep=""),
+  filename2=Samples$barcodes)
+
+
+write.table(df,"~/Desktop/ncbi_tmp/tmp_meta.tsv", quote=F, sep="\t", row.names=F)
+```
+
+```{bash,eval=F}
 ```
