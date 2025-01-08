@@ -13,6 +13,7 @@ In this folder you will find the scripts necessary to reproduce analyses from [R
 - **README.Rmd**: to produce the repeats annotation (RepeatModeler, RepeatMasker, TRF);
 - **Landscapes.Rmd**: to produce the TE landscape;
 - **Abundances.Rmd**: to get repeat abundances overall and in genomic windows.
+- genome-families.fa.gz: repeat library from RepeatModeler.
 
 ## WGS 
 

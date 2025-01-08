@@ -78,12 +78,27 @@ du -sh /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/*
 ##Gga - OK
 cp /nas/FAC/FBM/DEE/tschwand/myrmecophilus/D2c/SR/WGS/Gga/NovaSeq/* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Gga #(biggest one)
 ##Mfg - OK
-cp /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Mfg/NovaSeq/* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/ #(the one used)
-mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mfg_* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mfg
+cp /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Mfg/NovaSeq/* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mfg #(the one used)
+
 ##Mms - OK
 cp /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mms/Raw/*fastq.gz /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mms 
 ##Mun - OK
 cp /work/FAC/FBM/DEE/tschwand/myrmecophilus/WGS/Reads/Mun/Raw/*fastq.gz /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Mun #(the one used)
+
+mkdir /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/Gga /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+
+#OK
+mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/M* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.log /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+
+cp /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Downloading_NovaSeq.log /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+cp /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Downloading_NovaSeq.sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+cp /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Linking_Illumina.log /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+cp /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus/Linking_Illumina.sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS
+
+ mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/WGS  /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/DNA/
 ```
 
 ## To NCBi
@@ -118,7 +133,8 @@ date
 ' > /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.sh
 
 nohup sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.sh &> /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/NCBI_10122024.log &
- 
+
+#log moved to WGS see above 
 ```
 
 du -sh 
@@ -132,11 +148,6 @@ cp -r /nas/FAC/FBM/DEE/tschwand/default/LTS/Myrmecophilus
 NCBI BioSample attributes
 
 ```{r,eval=F}
-Invertebrate.1.0 <- read.delim("~/Downloads/Invertebrate.1.0.tsv", comment.char="#")
-head(Invertebrate.1.0)
-#You want to fill: 
-##Sample name
-###Organism:
 
 #From the sup. directly
 Samples <- read.delim("~/Papers_git/rnx/Samples.csv")
@@ -201,20 +212,10 @@ write.table(df,"~/Desktop/ncbi_tmp/tmp.tsv", quote=F, sep="\t", row.names=F)
 
 NCBI SRA metadata
 
-You can't upload raw data, NCBI want one filename per sample ...
+You can't upload raw data and barcodes, NCBI want one filename per sample ...
 
 ```{r,eval=F}
-OldSamples <- read.delim("~/mse/RADseq/Myrmecophilus_samples_simon.csv") %>% select(c("Plaque_myr","ID"))
-colnames(OldSamples) <-c("filename","sample")
-Samples <- left_join(Samples, OldSamples, by="sample")  
-summary(as.factor(Samples$filename))
-
-#filename 1: fastq
-#filename 2: barcorde
-
-#C+ 021a, 027a
-Samples$barcodes=ifelse(Samples$filename %in% c("19.0021a","19.0027a"),"C+", Samples$filename)
-
+Samples <- Samples %>% mutate(filename=paste(substr(Samples$sample,5,9),".fq.gz",sep=""))
 
 df <- data.frame(
   sample_name=Samples$sample,
@@ -228,12 +229,150 @@ df <- data.frame(
   instrument_model="Illumina HiSeq 2500",
   design_description="double-digest ddRADseq libraries following Brelsford et al. 2017",
   filetype="fastq",
-  filename=paste("Myr_",Samples$filename,"_all.fastq.gz",sep=""),
-  filename2=Samples$barcodes)
+  filename=Samples$filename)
 
 
 write.table(df,"~/Desktop/ncbi_tmp/tmp_meta.tsv", quote=F, sep="\t", row.names=F)
 ```
 
-```{bash,eval=F}
+## To NCBI
+
+```{bash, eval=F}
+#removing previous tranfer
+rm -r /scratch/vmerel/ncbi_tmp_WGS
+rm /users/vmerel/keys/aspera_WGS.key
+
+#download keyfile
+mkdir -p /users/vmerel/keys
+cd /users/vmerel/keys
+#manual -> aspera_RAD.key
+
+#list of file
+mkdir /scratch/vmerel/ncbi_tmp_RAD
+mkdir /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/RAD
+
+scp ~/Desktop/ncbi_tmp/tmp_meta.tsv vmerel@curnagl.dcsr.unil.ch://scratch/vmerel/ncbi_tmp_RAD
+
+#just a verif
+for file in `tail -n +2 tmp_meta.tsv | cut -f 12`
+do
+  #echo $file
+  gzip -cd  /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/$file | head -n 1
+  if [ ! -f /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/$file ];      then
+    echo "File not found!"
+  fi
+done
+
+echo '#!/usr/bin/env bash
+
+date
+
+source ~/.bashrc
+conda activate /scratch/vmerel/envs/aspera
+
+mkdir /scratch/vmerel/ncbi_tmp_RAD
+cd /scratch/vmerel/ncbi_tmp_RAD
+
+for file in `tail -n +2 tmp_meta.tsv | cut -f 12`
+do
+  cp /work/FAC/FBM/DEE/tschwand/myrmecophilus/RAD/clean/$file ./
+done
+
+ascp -i /users/vmerel/keys/aspera_RAD.key -QT -l100m -k1 -d /scratch/vmerel/ncbi_tmp_RAD/ subasp@upload.ncbi.nlm.nih.gov:uploads/merel.vincent_gmail.com_Rtsqk1nS/myrmeco_RAD
+
+date
+' > /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/RAD/NCBI_22122024.sh
+
+nohup sh /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/RAD/NCBI_22122024.sh &> /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/RAD/NCBI_22122024.log &
+ 
+#mv log and sh
+mv /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/SR/DNA/RAD/* /nas/FAC/FBM/DEE/tschwand/myrmecophilus/LTS/Reads/DNA/RAD/
 ```
+
+
+# mtDNA
+
+```{bash, eval=F}
+java -jar /home/vmerel/softs/macse_v2.07.jar
+
+java -jar /home/vmerel/softs/macse_v2.07.jar \
+        -prog alignSequences \
+        -seq /media/vmerel/8985-27AF/all_filtered.fasta \
+        -gc_def 5 \
+        -out_NT /media/vmerel/8985-27AF/all_filtered.NT_tmp \
+        -out_AA /media/vmerel/8985-27AF/all_filtered.AA_tmp  
+        
+        java -jar /home/vmerel/softs/macse_v2.07.jar \
+        -prog exportAlignment \
+        -align /media/vmerel/8985-27AF/all_filtered.NT_tmp \
+        -codonForInternalStop NNN \
+        -codonForInternalFS --- \
+        -codonForFinalStop --- \
+        -charForRemainingFS N \
+        -out_NT /media/vmerel/8985-27AF/all_filtered.NT \
+        -out_AA /media/vmerel/8985-27AF/all_filtered.AA 
+   
+/home/vmerel/softs/seaview/Gblocks /media/vmerel/8985-27AF/all_filtered.NT \
+-t=c 
+
+#Manually removing outgroup
+#NCBI not happy
+#[] CDS_HAS_FRAMESHIFT
+
+#254a
+#270a
+#271a
+#272a
+#273a
+#71b
+
+#For each seq, is complaining about residue 44 or 48 to 57, will just remove the first 60 residues for this seq ... I don't have any other sol
+
+~/softs/seaview/seaview /media/vmerel/8985-27AF/all_filtered.NT-gb_noOutgroup 
+
+
+
+~/softs/seaview/seaview convert \
+-gblocks /media/vmerel/8985-27AF/all_filtered.NT \
+-o -
+
+awk '!/gryllotalpa*/' RS=">" ORS=">" /media/vmerel/8985-27AF/all_filtered.fst | sed 's/-//g' | seqtk seq -l0 > /media/vmerel/8985-27AF/all_filtered.ncbi
+```
+
+```{R, eval=F}
+library(stringr)
+#From the sup. directly
+Samples <- read.delim("~/Papers_git/rnx/Samples.csv")
+
+#168a is missing is mitoch_id
+Samples$mitoch_id[Samples$sample=="19.0168a"]="myrmecophilus"
+
+
+#isolate to status
+Samples$status[Samples$status=="femelle"]="Female"
+Samples$status[Samples$status=="larve femelle"]="Female larvae"
+Samples$status[Samples$status=="larve indet"]="Larvae"
+Samples$status[Samples$status=="larve male"]="Male larvae"
+Samples$status[Samples$status=="male"]="Male"
+
+Samples$country = ifelse(Samples$`dep.`=="Grece:", "Greece", "France:")
+
+Samples_mitoch <- Samples %>%
+  filter(!is.na(mitoch_id))
+#Sequence_ID Orgnaism collection_date geo_loc_name isolate
+df <- data.frame(
+  Sequence_ID = 
+    ifelse(grepl("19.000",Samples_mitoch$sample), str_remove(Samples_mitoch$sample, "19.000"),
+           ifelse(grepl("19.00",Samples_mitoch$sample), str_remove(Samples_mitoch$sample, "19.00") , str_remove(Samples_mitoch$sample, "19.0"))),
+  organism=
+    paste("Myrmecophilus",
+          ifelse(Samples_mitoch$mitoch_id %in% c("ambiguous","unknown"), "sp.", Samples_mitoch$mitoch_id)),
+  collection_date=paste(Samples_mitoch$yyyy,Samples_mitoch$mm,sep="-"),
+  geo_loc_name=paste(Samples_mitoch$country,Samples_mitoch$dep.,sep=" "),
+  isolate=paste(Samples_mitoch$sample,Samples_mitoch$status,sep="-"))
+
+
+write.table(df,"~/Desktop/tmp.tsv", quote=F, sep="\t", row.names=F)
+
+```
+
